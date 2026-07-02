@@ -71,8 +71,7 @@ cask "calendar-gateway" do
   sha256 arm: "$darwin_arm64_sha",
          intel: "$darwin_x64_sha"
 
-  url "$release_base_url/$artifact_name-#{version}-#{arch}.dmg",
-      verified: "github.com/$github_repository/releases/download/"
+  url "$release_base_url/$artifact_name-#{version}-#{arch}.dmg"
   name "calendar-gateway"
   desc "Swift library and local CLI gateway for calendar clients"
   homepage "https://github.com/$github_repository"
