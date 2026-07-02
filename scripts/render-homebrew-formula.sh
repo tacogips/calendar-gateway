@@ -5,6 +5,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 artifact_name="calendar-gateway"
 product="calendar-gateway"
+formula_class="CalendarGateway"
+github_repository="tacogips/calendar-gateway"
 
 usage() {
   cat <<EOF
@@ -20,7 +22,7 @@ Environment:
 
 Example:
   scripts/build-homebrew-release.sh darwin-arm64 darwin-x64
-  scripts/render-homebrew-formula.sh 0.1.0 Formula/$artifact_name.rb
+  scripts/render-homebrew-formula.sh 0.1.1 Formula/$artifact_name.rb
 
 This renderer expects Swift macOS release archives. Linux archives are
 unsupported until the project defines a reviewed Swift Linux build contract.
@@ -56,7 +58,7 @@ main() {
   version="$1"
   output="${2:-$repo_root/Formula/$artifact_name.rb}"
   release_dir="${RELEASE_DIR:-$repo_root/dist/homebrew}"
-  release_base_url="${RELEASE_BASE_URL:-https://github.com/user/repo/releases/download/v$version}"
+  release_base_url="${RELEASE_BASE_URL:-https://github.com/$github_repository/releases/download/v$version}"
 
   local darwin_arm64_sha darwin_x64_sha
   darwin_arm64_sha="$(sha_for_target "$version" darwin-arm64 "$release_dir")"
@@ -64,9 +66,9 @@ main() {
 
   mkdir -p "$(dirname "$output")"
   cat > "$output" <<EOF
-class App < Formula
-  desc "A Swift command line tool"
-  homepage "https://github.com/user/repo"
+class $formula_class < Formula
+  desc "Swift library and local CLI gateway for calendar clients"
+  homepage "https://github.com/$github_repository"
   version "$version"
   license "MIT"
 

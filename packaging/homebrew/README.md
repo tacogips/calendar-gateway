@@ -71,8 +71,8 @@ From the tap checkout:
 ```bash
 ruby -c Formula/calendar-gateway.rb
 brew audit --strict calendar-gateway || brew audit --strict --formula calendar-gateway
-brew fetch --cask user/tap/calendar-gateway
-HOMEBREW_NO_GITHUB_API=1 brew audit --cask user/tap/calendar-gateway
+brew fetch --cask tacogips/tap/calendar-gateway
+HOMEBREW_NO_GITHUB_API=1 brew audit --cask tacogips/tap/calendar-gateway
 ```
 
 If online audit fails due local GitHub credentials or rate limits, run the
