@@ -94,6 +94,8 @@ public enum CalendarGatewayConfigLoader {
 
     try ensureUnique(credentials.map(\.id), context: "credentials.id")
     try ensureUnique(accounts.map(\.id), context: "calendars.id")
+    try ensureUnique(credentials.map { identifierEnvironmentKey($0.id) }, context: "normalized credentials.id")
+    try ensureUnique(accounts.map { identifierEnvironmentKey($0.id) }, context: "normalized calendars.id")
     try ensureUnique(credentials.map(\.tokenStorePath), context: "credentials.token_store_path")
     try validateAccountCredentialLinks(credentials: credentials, accounts: accounts)
     try validateOAuthClientSecretPaths(credentials)
@@ -110,10 +112,25 @@ public enum CalendarGatewayConfigLoader {
     configPath: String? = nil,
     environment: [String: String] = ProcessInfo.processInfo.environment
   ) throws -> [String: Any] {
+    let explicitConfigPath = nonBlank(configPath) ?? nonBlank(environment["CALENDAR_GATEWAY_CONFIG"])
+    let usesImplicitDefaultConfig = explicitConfigPath == nil
+    let selectedConfigPath = normalizedPath(explicitConfigPath ?? resolveDefaultConfigPath(environment: environment))
+    if usesImplicitDefaultConfig, !FileManager.default.fileExists(atPath: selectedConfigPath) {
+      return [
+        "ok": false,
+        "configPath": selectedConfigPath,
+        "configFileExists": false,
+        "usingDefaults": true,
+        "accountIds": [],
+        "credentialIds": []
+      ]
+    }
     let config = try loadConfig(configPath: configPath, environment: environment)
     return [
       "ok": true,
       "configPath": config.configPath,
+      "configFileExists": true,
+      "usingDefaults": false,
       "accountIds": config.accounts.map(\.id),
       "credentialIds": config.credentials.map(\.id)
     ]
@@ -194,13 +211,7 @@ public enum CalendarGatewayConfigLoader {
   }
 
   private static func credentialEnvSuffix(_ credentialId: String) -> String {
-    let suffix = credentialId.trimmingCharacters(in: .whitespacesAndNewlines).map { character -> Character in
-      character.isLetter || character.isNumber ? character : "_"
-    }
-    let normalized = String(suffix)
-      .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
-      .uppercased()
-    return normalized.isEmpty ? "CREDENTIAL" : normalized
+    identifierEnvironmentKey(credentialId)
   }
 }
 
@@ -323,6 +334,7 @@ private func parseCredentialConfig(
 ) throws -> CalendarCredentialConfig {
   let contextBase = "credentials[\(index)]"
   let credentialId = try readString(record["id"], "\(contextBase).id")
+  try validateConfigIdentifier(credentialId, context: "\(contextBase).id")
   let oauthClientSecretJSON = nonBlank(environment[
     CalendarGatewayConfigLoader.getCredentialJSONEnvVarName(
       credentialId: credentialId,
@@ -363,6 +375,7 @@ private func parseCredentialConfig(
 private func parseAccountConfig(_ record: [String: Any], index: Int) throws -> CalendarAccountConfig {
   let contextBase = "calendars[\(index)]"
   let id = try readString(record["id"], "\(contextBase).id")
+  try validateConfigIdentifier(id, context: "\(contextBase).id")
   let emailAddress = try readOptionalString(record["email_address"], "\(contextBase).email_address") ?? "\(id)@example.invalid"
   if !emailAddress.contains("@") {
     throw configError("\(contextBase).email_address must contain @")
@@ -466,6 +479,25 @@ private func ensureUnique(_ values: [String], context: String) throws {
     }
     seen.insert(value)
   }
+}
+
+private func validateConfigIdentifier(_ value: String, context: String) throws {
+  let pattern = #"^[A-Za-z0-9._-]+$"#
+  guard value.range(of: pattern, options: .regularExpression) != nil,
+        value != ".",
+        value != ".." else {
+    throw configError("\(context) may contain only ASCII letters, digits, period, underscore, and hyphen")
+  }
+}
+
+private func identifierEnvironmentKey(_ value: String) -> String {
+  let suffix = value.trimmingCharacters(in: .whitespacesAndNewlines).map { character -> Character in
+    character.isLetter || character.isNumber ? character : "_"
+  }
+  let normalized = String(suffix)
+    .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+    .uppercased()
+  return normalized.isEmpty ? "CREDENTIAL" : normalized
 }
 
 private func validateAccountCredentialLinks(

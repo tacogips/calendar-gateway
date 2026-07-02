@@ -19,6 +19,29 @@ import Testing
   #expect(error.message.contains("loopback URL"))
 }
 
+@Test func loopbackReceiverIgnoresStrayRequestsUntilExpectedCallback() throws {
+  let receiver = try LoopbackOAuthReceiver(redirectURI: nil)
+  let finished = DispatchSemaphore(value: 0)
+  final class ResultBox: @unchecked Sendable {
+    var result: Result<String, Error>?
+  }
+  let box = ResultBox()
+
+  DispatchQueue.global().async {
+    box.result = Result {
+      try receiver.waitForCode(expectedState: "expected-state", timeoutSeconds: 5)
+    }
+    finished.signal()
+  }
+
+  try sendLoopbackRequest(to: receiver.redirectURI.replacingOccurrences(of: "/oauth2callback", with: "/favicon.ico"))
+  try sendLoopbackRequest(to: "\(receiver.redirectURI)?code=good-code&state=expected-state")
+
+  #expect(finished.wait(timeout: .now() + 5) == .success)
+  let result = try #require(box.result)
+  #expect(try result.get() == "good-code")
+}
+
 @Test func googleAuthorizationURLUsesFixedRedirectURIAndCalendarScopes() throws {
   let credential = testCredential(accessMode: .read)
   let client = GoogleOAuthClient(
@@ -45,4 +68,21 @@ import Testing
   #expect(query["scope"]?.contains("https://www.googleapis.com/auth/calendar.events.readonly") == true)
   #expect(query["scope"]?.contains("https://www.googleapis.com/auth/calendar.calendarlist.readonly") == true)
   #expect(query["scope"]?.contains("https://www.googleapis.com/auth/calendar.freebusy") == true)
+}
+
+private func sendLoopbackRequest(to urlString: String) throws {
+  let url = try #require(URL(string: urlString))
+  let finished = DispatchSemaphore(value: 0)
+  final class ResponseBox: @unchecked Sendable {
+    var error: Error?
+  }
+  let box = ResponseBox()
+  URLSession.shared.dataTask(with: url) { _, _, error in
+    box.error = error
+    finished.signal()
+  }.resume()
+  #expect(finished.wait(timeout: .now() + 5) == .success)
+  if let error = box.error {
+    throw error
+  }
 }

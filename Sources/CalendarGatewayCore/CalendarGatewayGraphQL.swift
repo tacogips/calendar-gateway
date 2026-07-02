@@ -13,11 +13,14 @@ public func executeCalendarGraphQL(
 ) throws -> (body: [String: Any], exitCode: CalendarGatewayExitCode) {
   do {
     return (["data": try executeCalendarGraphQLData(service: service, query: query)], .success)
-  } catch let error as CalendarGatewayError where error.exitCode == .graphqlExecutionError || error.exitCode == .providerApiError {
-    let extensions: [String: Any] = [
+  } catch let error as CalendarGatewayError {
+    var extensions: [String: Any] = [
       "code": error.code.rawValue,
       "exitCode": error.exitCode.rawValue
     ]
+    if !error.details.isEmpty {
+      extensions["details"] = error.details
+    }
     return (
       [
         "data": NSNull(),
@@ -34,6 +37,15 @@ public func executeCalendarGraphQL(
 }
 
 private func executeCalendarGraphQLData(service: CalendarGatewayService, query: String) throws -> [String: Any] {
+  try rejectUnsupportedGraphQLVariables(in: query)
+  let rootFields = topLevelRootFields(in: query)
+  if rootFields.count > 1 {
+    throw CalendarGatewayError(
+      "GraphQL operations may contain exactly one root field",
+      code: .invalidArgument,
+      exitCode: .graphqlExecutionError
+    )
+  }
   if let source = rootFieldSource("calendarAPI", in: query) {
     return [
       "calendarAPI": projectGraphQLValue(
@@ -150,6 +162,17 @@ private func executeCalendarGraphQLData(service: CalendarGatewayService, query: 
   }
   throw CalendarGatewayError(
     "Unsupported GraphQL query",
+    code: .invalidArgument,
+    exitCode: .graphqlExecutionError
+  )
+}
+
+func rejectUnsupportedGraphQLVariables(in query: String) throws {
+  guard graphQLReferencesVariables(query) else {
+    return
+  }
+  throw CalendarGatewayError(
+    "GraphQL variables are not supported yet; use literal arguments",
     code: .invalidArgument,
     exitCode: .graphqlExecutionError
   )
@@ -442,6 +465,52 @@ private func rootFieldSource(_ field: String, in query: String) -> String? {
   fieldSource(for: field, in: query, atBraceDepth: 1)
 }
 
+private func topLevelRootFields(in query: String) -> [String] {
+  var fields: [String] = []
+  var braceDepth = 0
+  var parenDepth = 0
+  var index = query.startIndex
+  var inString = false
+  var previousWasEscape = false
+  while index < query.endIndex {
+    let character = query[index]
+    if character == "\"" && !previousWasEscape {
+      inString.toggle()
+      index = query.index(after: index)
+      continue
+    }
+    if inString {
+      previousWasEscape = character == "\\" && !previousWasEscape
+      index = query.index(after: index)
+      continue
+    }
+    previousWasEscape = false
+    switch character {
+    case "{":
+      braceDepth += 1
+    case "}":
+      braceDepth -= 1
+    case "(":
+      parenDepth += 1
+    case ")":
+      parenDepth -= 1
+    default:
+      if braceDepth == 1, parenDepth == 0, isGraphQLIdentifierStart(character) {
+        let start = index
+        var end = query.index(after: index)
+        while end < query.endIndex, isGraphQLIdentifier(query[end]) {
+          end = query.index(after: end)
+        }
+        fields.append(String(query[start..<end]))
+        index = end
+        continue
+      }
+    }
+    index = query.index(after: index)
+  }
+  return fields
+}
+
 private func fieldSource(for field: String, in query: String, atBraceDepth braceDepth: Int) -> String? {
   guard let range = rangeOfField(field, in: query, atBraceDepth: braceDepth) else {
     return nil
@@ -464,8 +533,21 @@ private func rangeOfField(_ field: String, in query: String, atBraceDepth target
   var braceDepth = 0
   var parenDepth = 0
   var index = query.startIndex
+  var inString = false
+  var previousWasEscape = false
   while index < query.endIndex {
     let character = query[index]
+    if character == "\"" && !previousWasEscape {
+      inString.toggle()
+      index = query.index(after: index)
+      continue
+    }
+    if inString {
+      previousWasEscape = character == "\\" && !previousWasEscape
+      index = query.index(after: index)
+      continue
+    }
+    previousWasEscape = false
     switch character {
     case "{":
       braceDepth += 1
@@ -490,6 +572,10 @@ private func rangeOfField(_ field: String, in query: String, atBraceDepth target
     index = query.index(after: index)
   }
   return nil
+}
+
+private func isGraphQLIdentifierStart(_ character: Character) -> Bool {
+  character.isLetter || character == "_"
 }
 
 private func isGraphQLIdentifier(_ character: Character) -> Bool {
@@ -683,17 +769,31 @@ private func argumentValueRange(_ name: String, in query: String) -> Range<Strin
   let args = query[query.index(after: argsOpen)..<query.index(before: argsClose)]
   var searchIndex = args.startIndex
   var matchRange: Range<String.Index>?
+  var searchInString = false
+  var searchPreviousWasEscape = false
   while searchIndex < args.endIndex {
-    guard let candidate = args[searchIndex...].range(of: name) else {
-      break
+    let character = query[searchIndex]
+    if character == "\"" && !searchPreviousWasEscape {
+      searchInString.toggle()
+      searchIndex = query.index(after: searchIndex)
+      continue
     }
-    let before = candidate.lowerBound > args.startIndex ? query[query.index(before: candidate.lowerBound)] : " "
-    let after = candidate.upperBound < args.endIndex ? query[candidate.upperBound] : " "
-    if !isGraphQLIdentifier(before), !isGraphQLIdentifier(after) {
-      matchRange = candidate
-      break
+    if searchInString {
+      searchPreviousWasEscape = character == "\\" && !searchPreviousWasEscape
+      searchIndex = query.index(after: searchIndex)
+      continue
     }
-    searchIndex = candidate.upperBound
+    searchPreviousWasEscape = false
+    if query[searchIndex...].hasPrefix(name) {
+      let candidateEnd = query.index(searchIndex, offsetBy: name.count)
+      let before = searchIndex > args.startIndex ? query[query.index(before: searchIndex)] : " "
+      let after = candidateEnd < args.endIndex ? query[candidateEnd] : " "
+      if !isGraphQLIdentifier(before), !isGraphQLIdentifier(after) {
+        matchRange = searchIndex..<candidateEnd
+        break
+      }
+    }
+    searchIndex = query.index(after: searchIndex)
   }
   guard let nameRange = matchRange else {
     return nil
@@ -748,6 +848,31 @@ private func argumentValueRange(_ name: String, in query: String) -> Range<Strin
     end = query.index(after: end)
   }
   return start..<end
+}
+
+private func graphQLReferencesVariables(_ query: String) -> Bool {
+  var index = query.startIndex
+  var inString = false
+  var previousWasEscape = false
+  while index < query.endIndex {
+    let character = query[index]
+    if character == "\"" && !previousWasEscape {
+      inString.toggle()
+      index = query.index(after: index)
+      continue
+    }
+    if inString {
+      previousWasEscape = character == "\\" && !previousWasEscape
+      index = query.index(after: index)
+      continue
+    }
+    previousWasEscape = false
+    if character == "$" {
+      return true
+    }
+    index = query.index(after: index)
+  }
+  return false
 }
 
 private func splitGraphQLArray(_ source: String) -> [String] {

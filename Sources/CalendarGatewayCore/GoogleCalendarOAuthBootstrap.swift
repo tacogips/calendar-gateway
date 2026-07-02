@@ -103,7 +103,7 @@ private struct GoogleCalendarOAuthTokenResponse {
   let expiresIn: Int?
 }
 
-private final class LoopbackOAuthReceiver {
+final class LoopbackOAuthReceiver: @unchecked Sendable {
   let redirectURI: String
   private let callbackPath: String
   private let socketFD: Int32
@@ -163,47 +163,54 @@ private final class LoopbackOAuthReceiver {
   }
 
   func waitForCode(expectedState: String, timeoutSeconds: Int32) throws -> String {
-    var pollSet = [pollfd(fd: socketFD, events: Int16(POLLIN), revents: 0)]
-    let pollResult = Darwin.poll(&pollSet, 1, timeoutSeconds * 1_000)
-    guard pollResult > 0 else {
-      throw authError("Timed out waiting for Google Calendar OAuth callback")
-    }
+    let deadline = Date().addingTimeInterval(TimeInterval(timeoutSeconds))
+    while true {
+      let remainingMilliseconds = Int(deadline.timeIntervalSinceNow * 1_000)
+      guard remainingMilliseconds > 0 else {
+        throw authError("Timed out waiting for Google Calendar OAuth callback")
+      }
 
-    let connection = accept(socketFD, nil, nil)
-    guard connection >= 0 else {
-      throw authError("Failed to accept Google Calendar OAuth callback")
-    }
-    defer {
-      close(connection)
-    }
+      var pollSet = [pollfd(fd: socketFD, events: Int16(POLLIN), revents: 0)]
+      let pollResult = Darwin.poll(&pollSet, 1, Int32(remainingMilliseconds))
+      guard pollResult > 0 else {
+        throw authError("Timed out waiting for Google Calendar OAuth callback")
+      }
 
-    var buffer = [UInt8](repeating: 0, count: 8_192)
-    let count = Darwin.read(connection, &buffer, buffer.count)
-    guard count > 0,
-          let request = String(bytes: buffer.prefix(Int(count)), encoding: .utf8) else {
-      try writeHTTPResponse(
-        connection,
-        status: "400 Bad Request",
-        body: "Google Calendar authentication failed. Return to the terminal for details.\n"
-      )
-      throw authError("Failed to read Google Calendar OAuth callback")
-    }
+      let connection = accept(socketFD, nil, nil)
+      guard connection >= 0 else {
+        throw authError("Failed to accept Google Calendar OAuth callback")
+      }
+      defer {
+        close(connection)
+      }
 
-    do {
-      let code = try parseCallbackCode(request: request, expectedState: expectedState, expectedPath: callbackPath)
-      try writeHTTPResponse(
-        connection,
-        status: "200 OK",
-        body: "Google Calendar authentication completed. You can close this window.\n"
-      )
-      return code
-    } catch {
-      try writeHTTPResponse(
-        connection,
-        status: "400 Bad Request",
-        body: "Google Calendar authentication failed. Return to the terminal for details.\n"
-      )
-      throw error
+      var buffer = [UInt8](repeating: 0, count: 8_192)
+      let count = Darwin.read(connection, &buffer, buffer.count)
+      guard count > 0,
+            let request = String(bytes: buffer.prefix(Int(count)), encoding: .utf8) else {
+        try writeHTTPResponse(
+          connection,
+          status: "400 Bad Request",
+          body: "Google Calendar authentication failed. Return to the terminal for details.\n"
+        )
+        continue
+      }
+
+      do {
+        let code = try parseCallbackCode(request: request, expectedState: expectedState, expectedPath: callbackPath)
+        try writeHTTPResponse(
+          connection,
+          status: "200 OK",
+          body: "Google Calendar authentication completed. You can close this window.\n"
+        )
+        return code
+      } catch {
+        try writeHTTPResponse(
+          connection,
+          status: "400 Bad Request",
+          body: "Google Calendar authentication failed. Return to the terminal for details.\n"
+        )
+      }
     }
   }
 }

@@ -497,66 +497,64 @@ public struct CalendarGatewayService {
   }
 
   public func revokeAuth(credentialId: String) throws -> [String: Any] {
+    try revokeAuth(credentialId: credentialId, revokeProviderToken: revokeGoogleOAuthToken)
+  }
+
+  func revokeAuth(
+    credentialId: String,
+    revokeProviderToken: (String) throws -> Void
+  ) throws -> [String: Any] {
     let credential = try requireCredential(credentialId)
-    let existed = FileManager.default.fileExists(atPath: credential.tokenStorePath)
-    if existed {
+    let tokenStore = try? loadGoogleCalendarOAuthTokenStore(
+      credential: credential,
+      missingAuthMessage: "Google Calendar token store does not exist"
+    )
+
+    var providerRevocationAttempted = false
+    var providerRevoked = false
+    var providerRevocationError: String?
+    if let token = nonBlank(tokenStore?.refreshToken) ?? nonBlank(tokenStore?.accessToken) {
+      providerRevocationAttempted = true
+      do {
+        try revokeProviderToken(token)
+        providerRevoked = true
+      } catch let error as CalendarGatewayError {
+        providerRevocationError = error.message
+      } catch {
+        providerRevocationError = error.localizedDescription
+      }
+    }
+
+    var localTokenDeleted = false
+    var localDeletionSkipped = false
+    var localDeletionReason: String?
+    if credential.tokenStoreJSON != nil {
+      localDeletionSkipped = true
+      localDeletionReason = "token store is supplied by environment"
+    } else if FileManager.default.fileExists(atPath: credential.tokenStorePath) {
       do {
         try FileManager.default.removeItem(atPath: credential.tokenStorePath)
+        localTokenDeleted = true
       } catch {
         throw CalendarGatewayError(
-          "Failed to revoke token store for credential \(credential.id)",
+          "Failed to delete token store for credential \(credential.id)",
           code: .authRequired,
           exitCode: .authenticationBootstrapError,
           details: ["cause": error.localizedDescription]
         )
       }
     }
-    return ["credentialId": credentialId, "revoked": existed]
-  }
 
-  public func pruneCache(calendarId: String?, all: Bool) throws -> [String: Any] {
-    let cacheRoot = normalizedPath(config.storage.cacheDir)
-    let targets: [String]
-    switch (all, calendarId) {
-    case (true, nil):
-      targets = [cacheRoot]
-    case (false, .some(let calendarId)):
-      let account = try requireAccount(calendarId)
-      targets = [URL(fileURLWithPath: cacheRoot).appendingPathComponent(account.id, isDirectory: true).path]
-    case (false, nil):
-      throw CalendarGatewayError(
-        "cache prune requires --all or --calendar",
-        code: .invalidArgument,
-        exitCode: .invalidCliUsage
-      )
-    case (true, .some):
-      throw CalendarGatewayError(
-        "cache prune accepts either --all or --calendar, but not both",
-        code: .invalidArgument,
-        exitCode: .invalidCliUsage
-      )
-    }
-
-    try FileManager.default.createDirectory(
-      atPath: cacheRoot,
-      withIntermediateDirectories: true,
-      attributes: [.posixPermissions: 0o700]
-    )
-
-    var prunedPaths: [String] = []
-    for target in targets {
-      let normalizedTarget = try assertWithinCacheRoot(target)
-      try? FileManager.default.removeItem(atPath: normalizedTarget)
-      if all {
-        try FileManager.default.createDirectory(
-          atPath: cacheRoot,
-          withIntermediateDirectories: true,
-          attributes: [.posixPermissions: 0o700]
-        )
-      }
-      prunedPaths.append(normalizedTarget)
-    }
-    return ["prunedPaths": prunedPaths]
+    return [
+      "credentialId": credentialId,
+      "revoked": providerRevoked || localTokenDeleted,
+      "providerRevocationAttempted": providerRevocationAttempted,
+      "providerRevoked": providerRevoked,
+      "providerRevocationError": providerRevocationError as Any? ?? NSNull(),
+      "localTokenDeleted": localTokenDeleted,
+      "localDeletionSkipped": localDeletionSkipped,
+      "localDeletionReason": localDeletionReason as Any? ?? NSNull()
+    ]
   }
 
   public func login(credentialId: String, options: GoogleCalendarOAuthLoginOptions = .default) throws -> [String: Any] {
@@ -606,20 +604,6 @@ public struct CalendarGatewayService {
     return account
   }
 
-  private func assertWithinCacheRoot(_ target: String) throws -> String {
-    let cacheRoot = normalizedPath(config.storage.cacheDir)
-    let normalizedTarget = normalizedPath(target)
-    if !isWithinRoot(rootPath: cacheRoot, candidatePath: normalizedTarget) {
-      throw CalendarGatewayError(
-        "Refusing to prune outside the configured cache root",
-        code: .configInvalid,
-        exitCode: .configurationError,
-        details: ["target": normalizedTarget, "cacheRoot": cacheRoot]
-      )
-    }
-    return normalizedTarget
-  }
-
   private func calendarInfo(_ account: CalendarAccountConfig) -> CalendarInfo {
     let credential = try? requireCredential(account.credentialId)
     let tokenState = credential.map(inspectCalendarTokenStore)?.state ?? .missing
@@ -644,7 +628,7 @@ public struct CalendarGatewayService {
 public typealias CalendarGatewayClient = CalendarGatewayService
 
 public enum Version {
-  public static let current = "0.1.0"
+  public static let current = "0.1.1"
 }
 
 func validateSendUpdates(_ sendUpdates: String?) throws {

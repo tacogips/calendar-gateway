@@ -33,7 +33,7 @@ import Testing
 
 @Test func graphQLRawCalendarAPISupportsWatchNotificationBodies() throws {
   let result = try executeCalendarGraphQL(
-    service: CalendarGatewayService(config: testConfig(), provider: FakeCalendarProvider()),
+    service: CalendarGatewayService(config: testConfig(accessMode: .readWrite), provider: FakeCalendarProvider()),
     query: """
     mutation {
       calendarAPI(
@@ -80,6 +80,7 @@ import Testing
         credentialId: "google-personal",
         method: "DELETE",
         path: "/channels/stop",
+        access: "read",
         body: "{\\"id\\":\\"channel-1\\",\\"resourceId\\":\\"resource-1\\"}"
       ) { status }
     }

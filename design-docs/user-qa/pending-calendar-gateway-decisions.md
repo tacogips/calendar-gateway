@@ -32,3 +32,14 @@ reader/writer binaries like the mail-gateway reference?
 
 Default design decision: use one executable with access-mode gating unless
 review finds separate binaries are necessary for write safety.
+
+## Platform Scope
+
+Should the project preserve Linux CI for the executable now, or explicitly scope
+v1 to macOS while Google Calendar OAuth bootstrap remains Apple-platform
+specific?
+
+Default design decision: v1 is macOS-only because `Package.swift` declares
+macOS 14 and the current OAuth bootstrap depends on Apple platform APIs. Linux
+support can be reconsidered after the OAuth bootstrap, browser launch, random
+bytes, and socket receiver are behind portable adapters.

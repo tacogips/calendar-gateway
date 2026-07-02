@@ -8,7 +8,7 @@ assumptions.
 
 ## Status
 
-Draft for issue-resolution workflow intake `comm-000276`.
+Draft for issue-resolution workflow intake `comm-000309`.
 
 ## Goals
 
@@ -96,11 +96,18 @@ names:
 Validation rules:
 
 - `credentials.id` and `calendars.id` are unique.
+- `credentials.id` and `calendars.id` contain only ASCII letters, digits,
+  period, underscore, and hyphen. IDs must not contain path separators,
+  traversal segments, whitespace, or characters that collide after environment
+  variable normalization.
 - `calendars.credential_id` references an existing credential with the same
   provider.
 - `access_mode` is one of `read`, `read_write`, or `full`.
 - token stores are local user files and should be `0600` where supported.
 - missing credential paths are valid only when a matching env override exists.
+- `config validate` must not report `ok: true` for a fabricated config when no
+  config file exists. The response must make `configFileExists` and
+  `usingDefaults` explicit, and a missing requested config path is an error.
 
 ## Swift Library Boundary
 
@@ -176,7 +183,17 @@ mutation {
 `--variables` and `--variables-file` accept JSON objects for transport
 compatibility with mail-gateway. Variable substitution is reserved for a later
 schema-complete GraphQL engine; v1 queries should continue to use flat literal
-arguments.
+arguments. A query that references variables with `$name` must fail explicitly
+while substitution is unsupported.
+
+The lightweight parser must be string-literal aware when locating root fields,
+matching argument names, and balancing parentheses or braces. Argument names or
+delimiter characters inside quoted strings are user data and must not affect
+field dispatch or argument extraction.
+
+Only one root field may execute per GraphQL operation until a full multi-field
+executor exists. Queries with multiple root fields must fail rather than return
+a partial response.
 
 Response objects are projected through the requested selection set for
 dictionaries, arrays, nested canonical event values, and free/busy values. This
@@ -191,16 +208,20 @@ Search input rules:
 
 - `calendarId` is required.
 - `timeMin` and `timeMax` use RFC 3339 date-time strings and are rejected
-  before provider calls when malformed.
+  before provider calls when malformed. Fractional seconds are allowed.
 - `updatedMin` uses an RFC 3339 date-time string and is rejected before
-  provider calls when malformed. Deleted events updated since that time are
-  included by Google regardless of `showDeleted`.
+  provider calls when malformed. Fractional seconds are allowed so clients can
+  feed Google `updated` values back into incremental sync. Deleted events
+  updated since that time are included by Google regardless of `showDeleted`.
 - `query` is provider search text and is combined with structured filters.
 - `maxResults` must be between 1 and 2500, matching Google Calendar
   `events.list` limits.
 - pagination uses provider tokens wrapped in opaque cursors; `nextCursor` is
   returned from event connections and accepted as `cursor` on subsequent
   `events` queries.
+- raw provider page tokens are not the preferred public contract. If exposed for
+  compatibility, they must be documented as a provider escape hatch and callers
+  must re-supply the same non-token query arguments across pages.
 - `nextSyncToken` is exposed so clients can perform later incremental syncs.
 - `syncToken` returns entries changed since a completed previous listing and
   cannot be combined with `query`, `timeMin`, `timeMax`, `updatedMin`, or
@@ -352,19 +373,34 @@ documentation:
 - `full`: `https://www.googleapis.com/auth/calendar`
 
 The broader `calendar.readonly` and `calendar` scopes are accepted when already
-present in token metadata for compatible configured modes. Event-only or
-calendar-list-only tokens are treated as scope mismatches because they cannot
-cover both `calendarList.list` and `freebusy.query`. Secrets and token values
-must not be printed, committed, or embedded in design examples.
+present in token metadata for compatible configured modes. This scope coverage
+rule applies consistently to `auth status`, capability reporting, and every
+request-time token validation path. Event-only or calendar-list-only tokens are
+treated as scope mismatches because they cannot cover both `calendarList.list`
+and `freebusy.query`. Secrets and token values must not be printed, committed,
+or embedded in design examples.
 
 Implemented auth behavior:
 
 - Desktop OAuth client JSON is required for `auth login`.
 - The login flow uses a loopback callback, browser launch, PKCE, `offline`
   access, and consent prompting to obtain a refresh token.
-- Expired access tokens are refreshed from `refresh_token` when possible.
+- The loopback receiver keeps accepting local connections until the expected
+  callback path and state arrive or the login deadline expires. Stray requests
+  receive an error response and do not abort the login flow.
+- Expired access tokens are refreshed from `refresh_token` when possible. If
+  the provider returns a rotated `refresh_token`, the new token replaces the
+  old token in the store.
+- Token refresh persistence should serialize read-modify-write access to the
+  token store where the platform supports file locking. If locking is not
+  available, the concurrency limitation must be documented.
 - Token stores are written under user-only directories with `0600` file
   permissions where supported.
+- `auth revoke` calls the provider revocation endpoint on the stored refresh or
+  access token on a best-effort basis before deleting local token material. The
+  response reports provider revocation and local deletion outcomes separately.
+  Environment-supplied token stores cannot be deleted locally and must be
+  reported as such.
 
 Write operations are high-risk:
 
@@ -373,6 +409,17 @@ Write operations are high-risk:
 - event deletion must require an explicit event ID and calendar ID
 - provider write errors must be surfaced without dumping request bodies that may
   contain private event details
+
+## Cache And Local File Safety
+
+`cache prune` must only remove paths inside the configured cache root after
+canonicalization and symlink resolution. Prefix-only string checks are not
+sufficient. Removal failures must be reported as errors and must not be counted
+as successfully pruned paths.
+
+The command exists for the gateway cache surface. Until a feature writes cache
+entries, documentation and command output should make the empty-cache case
+clear rather than implying data was pruned.
 
 ## Rollout And Verification
 
@@ -400,9 +447,8 @@ Required verification commands for full implementation handoff:
 
 ```bash
 task lint
-task build
-task test
-swift run calendar-gateway --help
+swift build
+swift test
 ```
 
 Optional live integration checks are documented in

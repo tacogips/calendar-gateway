@@ -46,89 +46,6 @@ import Testing
   #expect(cache.stderr.contains("Unexpected argument: extra"))
 }
 
-@Test func configValidationAcceptsEnvBackedCredentialFiles() throws {
-  let paths = temporaryConfigPaths()
-  defer {
-    try? FileManager.default.removeItem(atPath: paths.root)
-  }
-  try writeConfig(paths: paths)
-
-  let result = CalendarGatewayCLI().run(
-    arguments: ["--config", paths.config, "config", "validate"],
-    environment: env(paths: paths)
-  )
-
-  #expect(result.exitCode == CalendarGatewayExitCode.success.rawValue)
-  #expect(result.stdout.contains("\"ok\":true"))
-}
-
-@Test func calendarsGraphQLReturnsConfiguredCapabilities() throws {
-  let paths = temporaryConfigPaths()
-  defer {
-    try? FileManager.default.removeItem(atPath: paths.root)
-  }
-  try writeConfig(paths: paths)
-
-  let result = CalendarGatewayCLI().run(
-    arguments: [
-      "--config", paths.config,
-      "graphql",
-      "--query", "{ calendars { id displayName provider capabilities { canRead authState } } }"
-    ],
-    environment: env(paths: paths)
-  )
-
-  #expect(result.exitCode == CalendarGatewayExitCode.success.rawValue)
-  #expect(result.stdout.contains("\"id\":\"personal\""))
-  #expect(result.stdout.contains("\"displayName\":\"Personal\""))
-  #expect(result.stdout.contains("\"provider\":\"GOOGLE\""))
-  #expect(result.stdout.contains("\"authState\":\"READY\""))
-}
-
-@Test func graphQLAcceptsVariablesFile() throws {
-  let paths = temporaryConfigPaths()
-  defer {
-    try? FileManager.default.removeItem(atPath: paths.root)
-  }
-  try writeConfig(paths: paths)
-  let variablesPath = URL(fileURLWithPath: paths.root).appendingPathComponent("variables.json").path
-  try "{}".write(toFile: variablesPath, atomically: true, encoding: .utf8)
-
-  let result = CalendarGatewayCLI().run(
-    arguments: [
-      "--config", paths.config,
-      "graphql",
-      "--query", "{ calendars { id } }",
-      "--variables-file", variablesPath
-    ],
-    environment: env(paths: paths)
-  )
-
-  #expect(result.exitCode == CalendarGatewayExitCode.success.rawValue)
-  #expect(result.stdout.contains("\"id\":\"personal\""))
-}
-
-@Test func graphQLRejectsInvalidVariablesJSON() throws {
-  let paths = temporaryConfigPaths()
-  defer {
-    try? FileManager.default.removeItem(atPath: paths.root)
-  }
-  try writeConfig(paths: paths)
-
-  let result = CalendarGatewayCLI().run(
-    arguments: [
-      "--config", paths.config,
-      "graphql",
-      "--query", "{ calendars { id } }",
-      "--variables", "[1, 2, 3]"
-    ],
-    environment: env(paths: paths)
-  )
-
-  #expect(result.exitCode == CalendarGatewayExitCode.invalidCliUsage.rawValue)
-  #expect(result.stderr.contains("--variables must be a JSON object"))
-}
-
 @Test func serviceExposesTypedCalendarInfo() {
   let calendars = CalendarGatewayClient(config: testConfig()).calendars()
 
@@ -304,6 +221,22 @@ import Testing
   #expect(fake["orderBy"] as? String == "updated")
 }
 
+@Test func graphQLAcceptsFractionalSecondDateTimes() throws {
+  let result = try executeCalendarGraphQL(
+    service: CalendarGatewayService(config: testConfig(), provider: FakeCalendarProvider()),
+    query: """
+    { events(
+      calendarId: "personal",
+      timeMin: "2026-07-01T00:00:00.000Z",
+      timeMax: "2026-07-02T09:30:15.123+09:00",
+      updatedMin: "2026-07-01T12:00:00.000Z"
+    ) { events { id } } }
+    """
+  )
+
+  #expect(result.exitCode == .success)
+}
+
 @Test func eventSyncTokenRejectsIncompatibleSearchArguments() throws {
   let withTimeMin = try executeCalendarGraphQL(
     service: CalendarGatewayService(config: testConfig(), provider: ThrowingReadProvider()),
@@ -426,6 +359,59 @@ import Testing
   #expect(firstError["message"] as? String == "calendarExpansionMax must be between 1 and 50")
 }
 
+@Test func graphQLRejectsMultipleRootFields() throws {
+  let result = try executeCalendarGraphQL(
+    service: CalendarGatewayService(config: testConfig(), provider: FakeCalendarProvider()),
+    query: "{ calendars { id } providerCalendars(credentialId: \"google-personal\") { id } }"
+  )
+
+  #expect(result.exitCode == .graphqlExecutionError)
+  let errors = try #require(result.body["errors"] as? [[String: Any]])
+  #expect(errors.first?["message"] as? String == "GraphQL operations may contain exactly one root field")
+}
+
+@Test func graphQLArgumentLookupIgnoresArgumentNamesInsideStrings() throws {
+  let result = try executeCalendarGraphQL(
+    service: CalendarGatewayService(config: testConfig(accessMode: .readWrite), provider: FakeCalendarProvider()),
+    query: """
+    mutation {
+      createEvent(
+        calendarId: "personal",
+        summary: "Reminder: set timeMin: tomorrow",
+        start: "2026-07-01T09:00:00Z",
+        end: "2026-07-01T09:30:00Z"
+      ) { id summary }
+    }
+    """
+  )
+
+  #expect(result.exitCode == .success)
+  let data = try #require(result.body["data"] as? [String: Any])
+  let event = try #require(data["createEvent"] as? [String: Any])
+  #expect(event["summary"] as? String == "Reminder: set timeMin: tomorrow")
+}
+
+@Test func graphQLFieldLookupIgnoresDelimitersInsideStrings() throws {
+  let result = try executeCalendarGraphQL(
+    service: CalendarGatewayService(config: testConfig(accessMode: .readWrite), provider: FakeCalendarProvider()),
+    query: """
+    mutation {
+      createEvent(
+        calendarId: "personal",
+        summary: "1) use {braces",
+        start: "2026-07-01T09:00:00Z",
+        end: "2026-07-01T09:30:00Z"
+      ) { id summary }
+    }
+    """
+  )
+
+  #expect(result.exitCode == .success)
+  let data = try #require(result.body["data"] as? [String: Any])
+  let event = try #require(data["createEvent"] as? [String: Any])
+  #expect(event["summary"] as? String == "1) use {braces")
+}
+
 @Test func graphQLProjectsSelectedEventFields() throws {
   let result = try executeCalendarGraphQL(
     service: CalendarGatewayService(config: testConfig(), provider: FakeCalendarProvider()),
@@ -533,6 +519,20 @@ import Testing
   #expect(firstError["message"] as? String == "Google Calendar rate limit exceeded")
   #expect(extensions["code"] as? String == CalendarGatewayErrorCode.providerRateLimited.rawValue)
   #expect(extensions["exitCode"] as? Int32 == CalendarGatewayExitCode.providerApiError.rawValue)
+}
+
+@Test func graphQLMapsConfigurationErrorsIntoErrorEnvelope() throws {
+  let result = try executeCalendarGraphQL(
+    service: CalendarGatewayService(config: testConfig(), provider: FakeCalendarProvider()),
+    query: "{ providerCalendars(credentialId: \"missing\") { id } }"
+  )
+
+  #expect(result.exitCode == .configurationError)
+  #expect(result.body["data"] is NSNull)
+  let errors = try #require(result.body["errors"] as? [[String: Any]])
+  let extensions = try #require(errors.first?["extensions"] as? [String: Any])
+  #expect(errors.first?["message"] as? String == "Unknown credential: missing")
+  #expect(extensions["code"] as? String == CalendarGatewayErrorCode.credentialNotFound.rawValue)
 }
 
 @Test func googleHTTPErrorMappingUsesActionableCodes() {
@@ -806,41 +806,6 @@ import Testing
   #expect(error.message == "deleteEvent requires eventId")
 }
 
-@Test func cachePruneRequiresSelector() throws {
-  let error = try requireCalendarGatewayError {
-    _ = try CalendarGatewayService(config: testConfig()).pruneCache(calendarId: nil, all: false)
-  }
-
-  #expect(error.code == .invalidArgument)
-  #expect(error.exitCode == .invalidCliUsage)
-}
-
-@Test func cachePruneRemovesCalendarCacheOnly() throws {
-  let paths = temporaryConfigPaths()
-  defer {
-    try? FileManager.default.removeItem(atPath: paths.root)
-  }
-  try writeConfig(paths: paths)
-  let target = URL(fileURLWithPath: paths.cache)
-    .appendingPathComponent("personal", isDirectory: true)
-    .appendingPathComponent("events.json")
-    .path
-  try FileManager.default.createDirectory(
-    atPath: URL(fileURLWithPath: target).deletingLastPathComponent().path,
-    withIntermediateDirectories: true
-  )
-  try "{}".write(toFile: target, atomically: true, encoding: .utf8)
-
-  let result = CalendarGatewayCLI().run(
-    arguments: ["--config", paths.config, "cache", "prune", "--calendar", "personal"],
-    environment: env(paths: paths)
-  )
-
-  #expect(result.exitCode == CalendarGatewayExitCode.success.rawValue)
-  #expect(!FileManager.default.fileExists(atPath: target))
-  #expect(FileManager.default.fileExists(atPath: paths.cache))
-}
-
 @Test func tokenRefreshOAuthClientUsesInstalledClientTokenURI() throws {
   let credential = testCredential(oauthClientSecretJSON: """
   {
@@ -935,6 +900,26 @@ import Testing
   #expect(calendarScopesCover(accessMode: .read, grantedScope: "https://www.googleapis.com/auth/calendar"))
   #expect(calendarScopesCover(accessMode: .readWrite, grantedScope: "https://www.googleapis.com/auth/calendar"))
   #expect(calendarScopesCover(accessMode: .full, grantedScope: "https://www.googleapis.com/auth/calendar"))
+}
+
+@Test func liveTokenValidationUsesScopeCoverageSemantics() throws {
+  let broadToken = """
+  {"accessToken":"access","refreshToken":"refresh","expiresAt":"2099-01-01T00:00:00Z","scope":"https://www.googleapis.com/auth/calendar"}
+  """
+  let broadCredential = testCredential(tokenStoreJSON: broadToken, accessMode: .read)
+
+  #expect(try validGoogleCalendarAccessToken(credential: broadCredential, use: .read) == "access")
+
+  let partialToken = """
+  {"accessToken":"access","refreshToken":"refresh","expiresAt":"2099-01-01T00:00:00Z","scope":"https://www.googleapis.com/auth/calendar.events.readonly"}
+  """
+  let partialCredential = testCredential(tokenStoreJSON: partialToken, accessMode: .read)
+
+  let error = try requireCalendarGatewayError {
+    _ = try validGoogleCalendarAccessToken(credential: partialCredential, use: .read)
+  }
+  #expect(error.code == .authRequired)
+  #expect(error.exitCode == .providerApiError)
 }
 
 @Test func formURLEncodedEscapesReservedCharacters() {

@@ -95,6 +95,9 @@ func validateRawCalendarAPIRequest(_ request: CalendarRawAPIRequest) throws {
 }
 
 func rawCalendarAPITokenUse(for request: CalendarRawAPIRequest) -> CalendarAccessTokenUse {
+  guard request.method == .get else {
+    return .write
+  }
   switch request.access {
   case .read:
     return .read

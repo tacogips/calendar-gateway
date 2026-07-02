@@ -12,9 +12,16 @@ func normalizedPath(_ path: String) -> String {
   NSString(string: path).expandingTildeInPath
 }
 
+func canonicalPath(_ path: String) -> String {
+  URL(fileURLWithPath: normalizedPath(path))
+    .standardizedFileURL
+    .resolvingSymlinksInPath()
+    .path
+}
+
 func isWithinRoot(rootPath: String, candidatePath: String) -> Bool {
-  let root = normalizedPath(rootPath)
-  let candidate = normalizedPath(candidatePath)
+  let root = canonicalPath(rootPath)
+  let candidate = canonicalPath(candidatePath)
   return candidate == root || candidate.hasPrefix(root.hasSuffix("/") ? root : root + "/")
 }
 
@@ -99,11 +106,19 @@ func urlEncodedPathComponent(_ value: String) -> String {
 
 func isRFC3339DateTime(_ value: String) -> Bool {
   guard nonBlank(value) == value,
-        value.contains("T"),
-        ISO8601DateFormatter().date(from: value) != nil else {
+        value.contains("T") else {
     return false
   }
-  return true
+  return iso8601DateFormatter(fractionalSeconds: false).date(from: value) != nil ||
+    iso8601DateFormatter(fractionalSeconds: true).date(from: value) != nil
+}
+
+private func iso8601DateFormatter(fractionalSeconds: Bool) -> ISO8601DateFormatter {
+  let formatter = ISO8601DateFormatter()
+  formatter.formatOptions = fractionalSeconds
+    ? [.withInternetDateTime, .withFractionalSeconds]
+    : [.withInternetDateTime]
+  return formatter
 }
 
 func isCalendarDate(_ value: String) -> Bool {

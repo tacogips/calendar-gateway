@@ -124,7 +124,7 @@ func calendarScopesCover(accessMode: CalendarAccessMode, grantedScope: String?) 
   }
 }
 
-private func calendarAccessMode(_ granted: CalendarAccessMode, covers configured: CalendarAccessMode) -> Bool {
+func calendarAccessMode(_ granted: CalendarAccessMode, covers configured: CalendarAccessMode) -> Bool {
   switch (granted, configured) {
   case (.full, _), (.readWrite, .read), (.readWrite, .readWrite), (.read, .read):
     return true

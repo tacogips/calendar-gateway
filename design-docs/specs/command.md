@@ -38,7 +38,21 @@ Duplicate flags are rejected before config loading, provider calls, or global
 success output; callers must supply each flag at most once.
 Variable JSON is parsed and validated as an object for CLI compatibility with
 the mail-gateway transport contract; the current lightweight GraphQL parser
-still uses flat literal arguments.
+still uses flat literal arguments. Until variable substitution is implemented,
+queries that reference GraphQL variables with `$name` must fail with
+`INVALID_ARGUMENT` instead of silently ignoring supplied variables.
+
+Exit codes:
+
+| Code | Meaning |
+|------|---------|
+| 0 | success |
+| 1 | unexpected failure |
+| 2 | invalid CLI usage or invalid argument |
+| 3 | configuration or credential error |
+| 4 | authentication required |
+| 5 | GraphQL execution or provider API failure |
+| 6 | write operation disabled by configured access mode |
 
 Implemented GraphQL-style root fields:
 
@@ -54,6 +68,12 @@ Implemented GraphQL-style root fields:
 - `deleteEvent(calendarId: "...", eventId: "...", sendUpdates: "all|externalOnly|none")`
 - `calendarAPI(credentialId: "...", method: "GET|POST|PUT|PATCH|DELETE", path: "/colors", query: ["name=value"], body: "{\"json\":true}", access: "auto|read|write")`
 
+The lightweight GraphQL executor accepts exactly one top-level root field per
+operation. A document containing multiple root fields must fail with
+`INVALID_ARGUMENT`; silent partial results are not allowed. Resolver dispatch is
+based on the root field name, and write resolver names remain write-gated even
+if a caller labels the operation as `query`.
+
 Write fields fail with `WRITE_DISABLED` before provider mutation when the
 credential is not configured with `access_mode = "read_write"` or
 `access_mode = "full"`.
@@ -61,12 +81,15 @@ When supplied, `sendUpdates` is validated before provider mutation and must be
 `all`, `externalOnly`, or `none`.
 
 `freeBusy` returns canonical busy intervals without event details. `timeMin` and
-`timeMax` are required RFC 3339 date-time strings. When no
+`timeMax` are required RFC 3339 date-time strings. The accepted form includes
+timestamps with or without fractional seconds and with either `Z` or an explicit
+numeric offset. When no
 `providerCalendarId` or `providerCalendarIds` argument is supplied, the
 configured default provider calendar ID is used.
 
 `events` supports initial and incremental sync flows. `updatedMin`, `timeMin`,
-and `timeMax` must be RFC 3339 date-time strings. `syncToken` accepts the
+and `timeMax` must be RFC 3339 date-time strings, including Google-emitted
+fractional-second values such as `.000Z`. `syncToken` accepts the
 `nextSyncToken` from a completed previous event listing and cannot be combined
 with `query`, `timeMin`, `timeMax`, `updatedMin`, or `orderBy`; `showDeleted:
 false` is also rejected with `syncToken`.
@@ -89,3 +112,11 @@ resources such as ACLs, calendar metadata, colors, settings, channels, and watch
 notification endpoints. `path` must be a relative Calendar v3 path starting with
 `/`; absolute URLs and embedded query strings are rejected. Broad API usage
 should use `access_mode = "full"` so OAuth requests the full Calendar scope.
+Mutating HTTP methods (`POST`, `PUT`, `PATCH`, and `DELETE`) are always
+write-gated before provider calls. The `access` argument is only a token-scope
+hint and cannot downgrade a mutating method into a read operation.
+
+GraphQL resolver failures should be returned through the GraphQL `errors` array
+with machine-readable `extensions.code` and any safe diagnostic details. CLI
+usage failures that occur before GraphQL execution may still be reported as
+top-level stderr errors.

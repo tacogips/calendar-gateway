@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 private let calendarTokenRefreshLeeway: TimeInterval = 60
@@ -86,13 +87,12 @@ func validGoogleCalendarAccessToken(
   credential: CalendarCredentialConfig,
   use: CalendarAccessTokenUse
 ) throws -> String {
-  let tokenStore = try loadGoogleCalendarOAuthTokenStore(credential: credential, missingAuthMessage: use.missingAuthMessage)
-  try validateTokenStoreAccessMode(tokenStore, credential: credential, use: use)
-  if let accessToken = nonBlank(tokenStore.accessToken),
-     calendarAccessTokenIsFresh(expiresAt: tokenStore.expiresAt, refreshLeeway: calendarTokenRefreshLeeway) {
-    return accessToken
+  if credential.tokenStoreJSON != nil {
+    return try validGoogleCalendarAccessTokenWithoutLock(credential: credential, use: use)
   }
-  return try refreshGoogleCalendarAccessToken(credential: credential, tokenStore: tokenStore)
+  return try withGoogleCalendarTokenStoreLock(path: credential.tokenStorePath) {
+    try validGoogleCalendarAccessTokenWithoutLock(credential: credential, use: use)
+  }
 }
 
 func writeGoogleCalendarOAuthTokenStore(
@@ -121,7 +121,7 @@ func writeGoogleCalendarOAuthTokenStore(
   }
 }
 
-private func loadGoogleCalendarOAuthTokenStore(
+func loadGoogleCalendarOAuthTokenStore(
   credential: CalendarCredentialConfig,
   missingAuthMessage: String
 ) throws -> CalendarOAuthTokenStore {
@@ -153,13 +153,76 @@ private func loadGoogleCalendarOAuthTokenStore(
   }
 }
 
+private func validGoogleCalendarAccessTokenWithoutLock(
+  credential: CalendarCredentialConfig,
+  use: CalendarAccessTokenUse
+) throws -> String {
+  let tokenStore = try loadGoogleCalendarOAuthTokenStore(credential: credential, missingAuthMessage: use.missingAuthMessage)
+  try validateTokenStoreAccessMode(tokenStore, credential: credential, use: use)
+  if let accessToken = nonBlank(tokenStore.accessToken),
+     calendarAccessTokenIsFresh(expiresAt: tokenStore.expiresAt, refreshLeeway: calendarTokenRefreshLeeway) {
+    return accessToken
+  }
+  return try refreshGoogleCalendarAccessToken(credential: credential, tokenStore: tokenStore)
+}
+
+private func withGoogleCalendarTokenStoreLock<T>(path: String, operation: () throws -> T) throws -> T {
+  let lockPath = path + ".lock"
+  let lockDirectory = URL(fileURLWithPath: lockPath).deletingLastPathComponent()
+  try FileManager.default.createDirectory(
+    at: lockDirectory,
+    withIntermediateDirectories: true,
+    attributes: [.posixPermissions: 0o700]
+  )
+  let fd = Darwin.open(lockPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+  guard fd >= 0 else {
+    throw CalendarGatewayError(
+      "Failed to open Google Calendar token store lock",
+      code: .authRequired,
+      exitCode: .providerApiError,
+      details: ["path": lockPath]
+    )
+  }
+  defer {
+    close(fd)
+  }
+  guard flock(fd, LOCK_EX) == 0 else {
+    throw CalendarGatewayError(
+      "Failed to lock Google Calendar token store",
+      code: .authRequired,
+      exitCode: .providerApiError,
+      details: ["path": lockPath]
+    )
+  }
+  defer {
+    flock(fd, LOCK_UN)
+  }
+  return try operation()
+}
+
+func revokeGoogleOAuthToken(_ token: String) throws {
+  guard let revokeURL = URL(string: "https://oauth2.googleapis.com/revoke") else {
+    throw CalendarGatewayError(
+      "Google OAuth revocation endpoint is invalid",
+      code: .providerApiError,
+      exitCode: .providerApiError
+    )
+  }
+  var request = URLRequest(url: revokeURL)
+  request.httpMethod = "POST"
+  request.timeoutInterval = 30
+  request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+  request.httpBody = formURLEncoded([("token", token)]).data(using: .utf8)
+  _ = try performGoogleCalendarHTTPRequest(request, context: "Google OAuth token revocation failed")
+}
+
 private func validateTokenStoreAccessMode(
   _ tokenStore: CalendarOAuthTokenStore,
   credential: CalendarCredentialConfig,
   use: CalendarAccessTokenUse
 ) throws {
   let grantedAccessMode = tokenStore.accessMode ?? accessModeFromScopes(tokenStore.scope)
-  if let grantedAccessMode, grantedAccessMode != credential.accessMode {
+  if let grantedAccessMode, !calendarAccessMode(grantedAccessMode, covers: credential.accessMode) {
     throw CalendarGatewayError(
       "Stored Google Calendar token scope does not match configured access mode",
       code: .authRequired,
@@ -237,7 +300,7 @@ private func refreshGoogleCalendarAccessToken(
   let refreshed = CalendarOAuthTokenStore(
     accessMode: tokenStore.accessMode ?? credential.accessMode,
     accessToken: accessToken,
-    refreshToken: tokenStore.refreshToken,
+    refreshToken: nonBlank(object["refresh_token"] as? String) ?? tokenStore.refreshToken,
     tokenType: nonBlank(object["token_type"] as? String) ?? tokenStore.tokenType,
     scope: nonBlank(object["scope"] as? String) ?? tokenStore.scope,
     expiresAt: intValue(object["expires_in"]).map {

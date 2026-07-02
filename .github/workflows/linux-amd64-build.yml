@@ -1,4 +1,4 @@
-name: Linux amd64 build
+name: Linux amd64 platform boundary
 
 on:
   push:
@@ -9,35 +9,27 @@ permissions:
   contents: read
 
 concurrency:
-  group: linux-amd64-build-${{ github.ref }}
+  group: linux-amd64-platform-boundary-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build calendar-gateway on Linux amd64
+  platform-boundary:
+    name: Verify macOS-only product boundary
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - name: Check Out Repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
-      - name: Build Release CLI In Swift amd64 Container
-        env:
-          SWIFT_IMAGE: swift@sha256:4c6af6663ed2316002a3b38ff5505a1fc1f2749ec31e84936c32dd336713c569
-          EXECUTABLE_NAME: "calendar-gateway"
+      - name: Confirm Linux Build Is Intentionally Disabled
         run: |
           set -euo pipefail
-          docker run --rm \
-            --platform linux/amd64 \
-            -e EXECUTABLE_NAME \
-            -v "$GITHUB_WORKSPACE:/workspace" \
-            -w /workspace \
-            "$SWIFT_IMAGE" \
-            bash -lc '
-              set -euo pipefail
-              test "$(uname -m)" = "x86_64"
-              swift --version
-              swift build -c release --product "$EXECUTABLE_NAME" --triple x86_64-unknown-linux-gnu
-            '
+          ruby -e '
+            manifest = File.read("Package.swift")
+            expected = /platforms:\s*\[\s*\.macOS\(\.v14\)\s*\]/m
+            abort("Package.swift must declare platforms: [.macOS(.v14)]") unless manifest.match?(expected)
+          '
+          grep -q 'macOS-only' design-docs/specs/architecture.md
+          echo "calendar-gateway is intentionally scoped to macOS until OAuth bootstrap portability lands."
