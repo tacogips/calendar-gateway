@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Testing
 @testable import CalendarGatewayCore
 
@@ -402,6 +403,180 @@ func requireCalendarGatewayError(_ operation: () throws -> Void) throws -> Calen
   }
   Issue.record("Expected CalendarGatewayError")
   throw CalendarGatewayError("Expected test error", code: .invalidArgument, exitCode: .generalError)
+}
+
+final class OneShotHTTPServer: @unchecked Sendable {
+  let url: String
+
+  private let socketFD: Int32
+  private let responseBody: String
+  private let finished = DispatchSemaphore(value: 0)
+  private let lock = NSLock()
+  private var result: Result<String, Error>?
+  private var closed = false
+
+  init(path: String = "/token", responseBody: String) throws {
+    let fd = socket(AF_INET, SOCK_STREAM, 0)
+    guard fd >= 0 else {
+      throw CalendarGatewayError("Failed to create test HTTP socket", code: .providerApiError, exitCode: .providerApiError)
+    }
+
+    var reuse: Int32 = 1
+    guard setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size)) == 0 else {
+      close(fd)
+      throw CalendarGatewayError("Failed to configure test HTTP socket", code: .providerApiError, exitCode: .providerApiError)
+    }
+
+    var address = sockaddr_in()
+    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = in_port_t(0).bigEndian
+    address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+
+    let bindResult = withUnsafePointer(to: &address) { pointer in
+      pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+        Darwin.bind(fd, socketAddress, socklen_t(MemoryLayout<sockaddr_in>.size))
+      }
+    }
+    guard bindResult == 0 else {
+      close(fd)
+      throw CalendarGatewayError("Failed to bind test HTTP socket", code: .providerApiError, exitCode: .providerApiError)
+    }
+    guard listen(fd, 1) == 0 else {
+      close(fd)
+      throw CalendarGatewayError("Failed to listen on test HTTP socket", code: .providerApiError, exitCode: .providerApiError)
+    }
+
+    var boundAddress = sockaddr_in()
+    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let nameResult = withUnsafeMutablePointer(to: &boundAddress) { pointer in
+      pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+        getsockname(fd, socketAddress, &length)
+      }
+    }
+    guard nameResult == 0 else {
+      close(fd)
+      throw CalendarGatewayError("Failed to resolve test HTTP socket port", code: .providerApiError, exitCode: .providerApiError)
+    }
+
+    socketFD = fd
+    self.responseBody = responseBody
+    url = "http://127.0.0.1:\(UInt16(bigEndian: boundAddress.sin_port))\(path)"
+
+    DispatchQueue.global().async {
+      self.serve()
+    }
+  }
+
+  deinit {
+    closeSocket()
+  }
+
+  func waitForRequest(timeout: DispatchTime = .now() + 5) throws -> String {
+    #expect(finished.wait(timeout: timeout) == .success)
+    switch loadResult() {
+    case .success(let request):
+      return request
+    case .failure(let error):
+      throw error
+    case nil:
+      throw CalendarGatewayError("Test HTTP server did not capture a request", code: .providerApiError, exitCode: .providerApiError)
+    }
+  }
+
+  private func serve() {
+    let requestResult = Result {
+      let connection = accept(socketFD, nil, nil)
+      guard connection >= 0 else {
+        throw CalendarGatewayError("Failed to accept test HTTP request", code: .providerApiError, exitCode: .providerApiError)
+      }
+      defer {
+        close(connection)
+        closeSocket()
+      }
+
+      let request = try readHTTPRequest(from: connection)
+      try writeHTTPResponse(to: connection)
+      return request
+    }
+    store(requestResult)
+    finished.signal()
+  }
+
+  private func readHTTPRequest(from connection: Int32) throws -> String {
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 4_096)
+    while true {
+      let count = Darwin.read(connection, &buffer, buffer.count)
+      guard count > 0 else {
+        break
+      }
+      data.append(buffer, count: Int(count))
+      if requestDataIsComplete(data) {
+        break
+      }
+    }
+    guard let request = String(data: data, encoding: .utf8), !request.isEmpty else {
+      throw CalendarGatewayError("Test HTTP request was empty", code: .providerApiError, exitCode: .providerApiError)
+    }
+    return request
+  }
+
+  private func requestDataIsComplete(_ data: Data) -> Bool {
+    guard let request = String(data: data, encoding: .utf8),
+          let headerRange = request.range(of: "\r\n\r\n") else {
+      return false
+    }
+    let header = String(request[..<headerRange.lowerBound])
+    let bodyStart = request.distance(from: request.startIndex, to: headerRange.upperBound)
+    let contentLength = header
+      .components(separatedBy: "\r\n")
+      .first { $0.lowercased().hasPrefix("content-length:") }?
+      .split(separator: ":", maxSplits: 1)
+      .last
+      .flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+    return data.count >= bodyStart + (contentLength ?? 0)
+  }
+
+  private func writeHTTPResponse(to connection: Int32) throws {
+    let response = """
+    HTTP/1.1 200 OK\r
+    Content-Type: application/json\r
+    Connection: close\r
+    Content-Length: \(responseBody.utf8.count)\r
+    \r
+    \(responseBody)
+    """
+    _ = response.withCString { pointer in
+      Darwin.write(connection, pointer, strlen(pointer))
+    }
+  }
+
+  private func store(_ result: Result<String, Error>) {
+    lock.lock()
+    self.result = result
+    lock.unlock()
+  }
+
+  private func loadResult() -> Result<String, Error>? {
+    lock.lock()
+    defer {
+      lock.unlock()
+    }
+    return result
+  }
+
+  private func closeSocket() {
+    lock.lock()
+    defer {
+      lock.unlock()
+    }
+    guard !closed else {
+      return
+    }
+    close(socketFD)
+    closed = true
+  }
 }
 
 func testCredential(

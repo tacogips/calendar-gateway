@@ -1,6 +1,6 @@
 # Calendar Gateway Review Findings Implementation Plan
 
-**Status**: Active
+**Status**: Completed
 **Workflow Mode**: issue-resolution
 **Created**: 2026-07-02
 **Issue Reference**: No GitHub issue URL or repository-plus-number was provided; this plan is tied to workflow intake and local design/review documents.
@@ -260,7 +260,9 @@ accepted in the design.
 
 **Completion Criteria**:
 
-- Refresh-token rotation is preserved in the token store.
+- Refresh-token rotation is preserved in the token store, with a regression
+  test that exercises an expired file-backed token store and a mocked token
+  endpoint response containing a rotated `refresh_token`.
 - `auth revoke` no longer only deletes the local file when provider revocation
   is possible.
 - Stray loopback requests do not abort an otherwise valid login.
@@ -402,3 +404,36 @@ manually and document that limitation in the progress log.
   `.github/workflows/linux-amd64-build.yml` with a multiline Ruby manifest
   check. Ran the exact workflow shell step locally:
   `set -euo pipefail; ruby -e '...'; grep -q 'macOS-only' design-docs/specs/architecture.md; echo ...`.
+- 2026-07-02: Addressed Step 6 test-integrity feedback for TASK-008 by adding
+  `tokenRefreshPersistsRotatedRefreshToken`, which drives
+  `validGoogleCalendarAccessToken` through an expired file-backed token store
+  and a local mocked token endpoint response containing
+  `refresh_token: "rotated-refresh"`, then asserts the persisted token store
+  keeps that rotated refresh token. Initial focused verification
+  `swift test --filter tokenRefreshPersistsRotatedRefreshToken` failed before
+  package compilation because the inherited Nix SDK was incompatible with the
+  selected Xcode Swift toolchain (`no such module 'SwiftShims'`). Reran with
+  the Xcode SDK/toolchain environment and the focused test passed.
+- 2026-07-02: Reran broad verification after the TASK-008 test-integrity fix:
+  `swift test`, `swift build`, `swift run calendar-gateway --help`,
+  `task build`, `task test`, `task lint`, and `git diff --check` passed.
+  `task lint` was run inside `nix develop` because `swiftlint` was not
+  available on the direct shell `PATH`.
+- 2026-07-02: Addressed Step 6 self-review feedback for the Swift file
+  line-count rule by moving `tokenRefreshPersistsRotatedRefreshToken` from
+  `Tests/AppCoreTests/CommandTests.swift` to
+  `Tests/AppCoreTests/OAuthTokenRefreshTests.swift`. Verified the split with
+  `wc -l Tests/AppCoreTests/CommandTests.swift Tests/AppCoreTests/OAuthTokenRefreshTests.swift Tests/AppCoreTests/TestSupport.swift`;
+  `CommandTests.swift` is now 978 lines.
+- 2026-07-02: Reran verification after the line-count split:
+  `swift test --filter tokenRefreshPersistsRotatedRefreshToken`, `swift test`,
+  `nix develop -c bash -lc '... task lint'`, `git diff --check`, and
+  `rg --files -g '*.swift' | xargs wc -l | sort -n | tail -20` passed.
+  Broad `swift test` passed 103 tests.
+- 2026-07-02: Final continuation verification passed with the Xcode
+  SDK/toolchain environment: `swift test --filter
+  tokenRefreshPersistsRotatedRefreshToken`, `swift test` with 103 tests,
+  `swift build`, `swift run calendar-gateway --help`, `task build`,
+  `task test`, `nix develop -c bash -lc '... task lint'`, `git diff --check`,
+  and the Swift file line-count audit. `task lint` reported 0 violations in
+  28 files.
