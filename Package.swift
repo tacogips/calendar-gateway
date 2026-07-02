@@ -8,18 +8,20 @@ let package = Package(
     .macOS(.v14)
   ],
   products: [
-    .library(name: "AppCore", targets: ["AppCore"]),
-    .executable(name: "calendar-gateway", targets: ["AppCLI"])
+    .library(name: "CalendarGatewayCore", targets: ["CalendarGatewayCore"]),
+    .executable(name: "calendar-gateway", targets: ["CalendarGatewayCLI"])
   ],
   targets: [
-    .target(name: "AppCore"),
+    .target(name: "CalendarGatewayCore"),
     .executableTarget(
-      name: "AppCLI",
-      dependencies: ["AppCore"]
+      name: "CalendarGatewayCLI",
+      dependencies: ["CalendarGatewayCore"],
+      path: "Sources/AppCLI"
     ),
     .testTarget(
-      name: "AppCoreTests",
-      dependencies: ["AppCore"]
+      name: "CalendarGatewayCoreTests",
+      dependencies: ["CalendarGatewayCore"],
+      path: "Tests/AppCoreTests"
     )
   ],
   swiftLanguageModes: [.v6]

@@ -1,6 +1,7 @@
 # calendar-gateway
 
-A Swift command line tool
+Swift library and local CLI gateway for calendar clients such as Google
+Calendar.
 
 ## Development
 
@@ -13,14 +14,45 @@ swift run calendar-gateway --help
 
 The package uses Swift Package Manager with:
 
-- Library target: `AppCore`
-- Executable target: `AppCLI`
+- Library target: `CalendarGatewayCore`
+- Executable target: `CalendarGatewayCLI`
 - Installed executable: `calendar-gateway`
 
 Swift target names and type names must be valid Swift identifiers. If the project
 name contains hyphens, keep `PROJECT_NAME` and `EXECUTABLE_NAME` hyphenated as
-needed, but use identifier-safe values such as `AppCore`, `AppCLI`, and
-`AppCommand` for Swift module/type variables.
+needed, but use identifier-safe values such as `CalendarGatewayCore`,
+`CalendarGatewayCLI`, and `CalendarGatewayCommandResult` for Swift module/type
+variables.
+
+## CLI
+
+```bash
+calendar-gateway --help
+calendar-gateway config validate
+calendar-gateway auth status --credential google-personal
+calendar-gateway auth login --credential google-personal --redirect-uri http://127.0.0.1:8765/oauth2callback
+calendar-gateway cache prune --calendar personal
+calendar-gateway graphql --query '{ calendars { id provider } }'
+calendar-gateway graphql --query '{ freeBusy(calendarId: "personal", timeMin: "2026-07-01T00:00:00Z", timeMax: "2026-07-02T00:00:00Z") { calendars { id busy { start end } } } }'
+calendar-gateway graphql --query '{ calendarAPI(credentialId: "google-personal", method: "GET", path: "/colors") { status body } }'
+```
+
+Configuration defaults to `$XDG_CONFIG_HOME/calendar-gateway/config.toml` and
+can be overridden with `--config` or `CALENDAR_GATEWAY_CONFIG`.
+
+`auth login` starts a local loopback OAuth callback server, opens the Google
+authorization page, exchanges the callback code, and writes the token store. Use
+`--redirect-uri http://127.0.0.1:<port>/<path>` to bind a fixed local callback
+URI, `--open-browser false` to print the authorization URL for manual browser
+use, and `--timeout-seconds <seconds>` to control how long the callback server
+waits.
+
+Typed GraphQL fields cover accounts, provider calendar discovery, free/busy,
+event search/fetch, and event create/update/delete. The `calendarAPI` field is a
+library and CLI escape hatch for the rest of the official Google Calendar v3
+surface, including ACLs, calendar metadata, colors, settings, channels, and
+watch notification endpoints. Use `access_mode = "full"` when a credential must
+request the broad `https://www.googleapis.com/auth/calendar` scope.
 
 ## Homebrew Formula
 

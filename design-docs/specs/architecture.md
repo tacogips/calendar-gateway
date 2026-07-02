@@ -6,14 +6,18 @@ Draft
 
 ## Overview
 
-`calendar-gateway` is a Swift Package Manager project with a
-library target, an executable target, tests, and release automation for Homebrew.
+`calendar-gateway` is a Swift Package Manager project with a calendar-domain
+library target, a CLI executable target, tests, and release automation for
+Homebrew.
 
 ## Targets
 
-- `AppCore`: domain and command logic
-- `AppCLI`: command line entry point
-- `AppCoreTests`: package tests
+- `CalendarGatewayCore`: calendar config, auth status, provider adapters,
+  event and free/busy operations, GraphQL-style command execution, and public
+  library API
+- `CalendarGatewayCLI`: command line entry point for the `calendar-gateway`
+  executable
+- `CalendarGatewayCoreTests`: package tests
 
 ## Release Surfaces
 

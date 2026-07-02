@@ -1,17 +1,12 @@
 import Foundation
-import AppCore
+import CalendarGatewayCore
 
-let command = AppCommand(arguments: Array(CommandLine.arguments.dropFirst()))
+let result = CalendarGatewayCLI().run(arguments: Array(CommandLine.arguments.dropFirst()))
 
-do {
-  let output = try command.run()
-  if !output.isEmpty {
-    print(output)
-  }
-} catch AppCommand.Error.unknownArgument(let argument) {
-  FileHandle.standardError.write(Data("Unknown argument: \(argument)\n".utf8))
-  exit(2)
-} catch {
-  FileHandle.standardError.write(Data("Error: \(error)\n".utf8))
-  exit(1)
+if !result.stdout.isEmpty {
+  FileHandle.standardOutput.write(Data(result.stdout.utf8))
 }
+if !result.stderr.isEmpty {
+  FileHandle.standardError.write(Data(result.stderr.utf8))
+}
+exit(result.exitCode)
