@@ -572,7 +572,7 @@ public struct CalendarGatewayService {
 public typealias CalendarGatewayClient = CalendarGatewayService
 
 public enum Version {
-  public static let current = "0.1.1"
+  public static let current = "0.1.2"
 }
 
 func validateSendUpdates(_ sendUpdates: String?) throws {

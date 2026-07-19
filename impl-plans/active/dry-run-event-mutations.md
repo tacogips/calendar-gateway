@@ -1,6 +1,6 @@
 # Dry-Run Event Mutations Implementation Plan
 
-**Status**: Verified And Safety-Reviewed; Commit Pending
+**Status**: Complete
 **Workflow Mode**: `issue-resolution`
 **Issue Reference**: `codex-design-and-implement-review-loop-session-600/comm-001238`
 **Design Review Decision**: `accepted-ready-for-implementation-planning`
@@ -366,7 +366,7 @@ boundary without returning to design review first.
   unrelated file.
 - [x] The progress log records the five staged-content inspection commands,
   reviewed paths, and an explicit `Pass` result before the commit command.
-- [ ] One focused local commit exists and no remote push occurred.
+- [x] One focused local commit exists and no remote push occurred.
 
 ## Dependencies
 
@@ -452,7 +452,7 @@ must still pass.
   high/mid finding, or secret-safety concern remains unresolved.
 - [x] The exact staged commit target receives a recorded safety `Pass` after
   all staged-diff commands and before `git commit`.
-- [ ] Changes are contained to authorized paths and committed once locally
+- [x] Changes are contained to authorized paths and committed once locally
   without a push.
 
 ## Progress Log Expectations
@@ -528,3 +528,7 @@ documentation is changed.
   generated environment value, or unrelated change is present. The only
   credential-keyword matches are safety-policy prose in this plan. Commit is
   now authorized; no push is authorized.
+- 2026-07-18: TASK-008 completed. Created the single focused local commit
+  `Add dry-run event mutation previews`; the repository gitleaks commit hook
+  passed. This progress-only amendment finalizes the same commit. No remote
+  push occurred. Remaining risks or blockers: none.
