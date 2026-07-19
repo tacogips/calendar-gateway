@@ -8,7 +8,10 @@ assumptions.
 
 ## Status
 
-Draft for issue-resolution workflow intake `comm-000309`.
+Draft. The event-mutation dry-run extension is selected for issue-resolution
+workflow issue `codex-design-and-implement-review-loop-session-600/comm-001238`.
+No GitHub issue URL or repository-number reference was supplied, and no
+Codex-agent reference was supplied.
 
 ## Goals
 
@@ -160,9 +163,9 @@ type Query {
 }
 
 type Mutation {
-  createEvent(input: EventInput!): EventMutationPayload!
-  updateEvent(input: EventUpdateInput!): EventMutationPayload!
-  deleteEvent(calendarId: ID!, eventId: ID!, sendUpdates: SendUpdates): DeleteEventPayload!
+  createEvent(input: EventInput!, dryRun: Boolean = false): EventMutationPayload!
+  updateEvent(input: EventUpdateInput!, dryRun: Boolean = false): EventMutationPayload!
+  deleteEvent(calendarId: ID!, eventId: ID!, sendUpdates: SendUpdates, dryRun: Boolean = false): DeleteEventPayload!
 }
 ```
 
@@ -267,8 +270,32 @@ Event mutation date rules:
 - `createConference: true` requests Google Meet creation for Google Calendar
   writes. `conferenceRequestId` may be supplied with `createConference: true`
   as an idempotency key and must be non-empty when present.
-- `sendUpdates` accepts only Google Calendar's supported values: `all`,
-  `externalOnly`, or `none`.
+- The existing `sendUpdates` validator treats omitted or whitespace-only input
+  as absent; otherwise, the trimmed value must be one of Google Calendar's
+  supported values: `all`, `externalOnly`, or `none`. Validation does not
+  rewrite the live provider argument, and dry-run previews expose that same
+  original provider-bound value.
+
+Event mutation dry-run rules:
+
+- `dryRun` is opt-in and defaults to `false` for service and GraphQL callers.
+- The service resolves the configured account and enforces the existing write
+  gate before validation, normalization, and any dry-run short-circuit. A
+  read-only credential therefore returns `WRITE_DISABLED` even for a dry-run.
+- Dry-run create/update responses include `dryRun: true`, the operation name,
+  resolved target metadata, and `validatedInput` matching the exact normalized
+  input that the live branch would pass to the provider. Dry-run delete
+  responses include both local and resolved provider target identifiers,
+  `wouldDelete: true`, and `deleted: false`.
+- The short-circuit occurs before the provider adapter, so provider write
+  methods are never called for dry-run requests.
+- With dry-run omitted or false, existing mutation response shapes, validation,
+  provider arguments, and behavior stay unchanged. GraphQL validation and
+  access failures retain the existing `data: null` plus `errors` envelope.
+
+The selected rationale, exact preview shapes, direct CLI contract, boundaries,
+and verification requirements are defined in
+`design-docs/specs/design-dry-run-event-mutations.md`.
 
 ## Provider Adapter Contract
 
@@ -405,7 +432,9 @@ Implemented auth behavior:
 Write operations are high-risk:
 
 - tests must use fakes unless explicitly marked live/integration
-- dry-run behavior should be considered for CLI mutation ergonomics
+- create, update, and delete expose the opt-in dry-run behavior defined in
+  `design-docs/specs/design-dry-run-event-mutations.md`; dry-run is not a
+  substitute for write access and never bypasses the write gate
 - event deletion must require an explicit event ID and calendar ID
 - provider write errors must be surfaced without dumping request bodies that may
   contain private event details

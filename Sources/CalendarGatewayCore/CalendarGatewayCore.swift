@@ -424,62 +424,6 @@ public struct CalendarGatewayService {
     return try provider.queryFreeBusy(account: account, credential: credential, query: normalizedQuery)
   }
 
-  public func createEvent(input: CalendarEventInput) throws -> Any {
-    try createCalendarEvent(input: input).graphQLObject
-  }
-
-  public func createCalendarEvent(input: CalendarEventInput) throws -> CalendarEvent {
-    let account = try requireAccount(input.accountId)
-    let credential = try requireWriteCredential(account.credentialId)
-    try validateEventInput(input, requireStartEnd: true)
-    try validateSendUpdates(input.sendUpdates)
-    return try provider.createEvent(account: account, credential: credential, input: try normalizedEventInput(input))
-  }
-
-  public func updateEvent(input: CalendarEventInput) throws -> Any {
-    try updateCalendarEvent(input: input).graphQLObject
-  }
-
-  public func updateCalendarEvent(input: CalendarEventInput) throws -> CalendarEvent {
-    let account = try requireAccount(input.accountId)
-    let credential = try requireWriteCredential(account.credentialId)
-    guard nonBlank(input.eventId) != nil else {
-      throw CalendarGatewayError(
-        "updateEvent requires eventId",
-        code: .invalidArgument,
-        exitCode: .graphqlExecutionError
-      )
-    }
-    try validateEventInput(input, requireStartEnd: false)
-    try validateSendUpdates(input.sendUpdates)
-    return try provider.updateEvent(account: account, credential: credential, input: try normalizedEventInput(input))
-  }
-
-  public func deleteEvent(
-    accountId: String,
-    calendarId: String? = nil,
-    eventId: String,
-    sendUpdates: String? = nil
-  ) throws -> [String: Any] {
-    let account = try requireAccount(accountId)
-    let credential = try requireWriteCredential(account.credentialId)
-    guard let eventId = nonBlank(eventId) else {
-      throw CalendarGatewayError(
-        "deleteEvent requires eventId",
-        code: .invalidArgument,
-        exitCode: .graphqlExecutionError
-      )
-    }
-    try validateSendUpdates(sendUpdates)
-    return try provider.deleteEvent(
-      account: account,
-      credential: credential,
-      calendarId: try normalizedProviderCalendarId(calendarId, defaultCalendarId: account.defaultCalendarId),
-      eventId: eventId,
-      sendUpdates: sendUpdates
-    )
-  }
-
   public func getAuthStatus(credentialId: String) throws -> [String: Any] {
     let credential = try requireCredential(credentialId)
     let tokenState = inspectCalendarTokenStore(credential: credential)
@@ -734,7 +678,7 @@ private func validateProviderCalendarId(_ calendarId: String?) throws {
   _ = try normalizedOptionalProviderCalendarId(calendarId)
 }
 
-private func normalizedProviderCalendarId(_ calendarId: String?, defaultCalendarId: String) throws -> String {
+func normalizedProviderCalendarId(_ calendarId: String?, defaultCalendarId: String) throws -> String {
   try normalizedOptionalProviderCalendarId(calendarId) ?? defaultCalendarId
 }
 

@@ -57,7 +57,10 @@ private func executeCalendarGraphQLData(service: CalendarGatewayService, query: 
   if let source = rootFieldSource("createEvent", in: query) {
     return [
       "createEvent": projectGraphQLValue(
-        try service.createEvent(input: eventInput(from: source, requireEventId: false)),
+        try service.createEvent(
+          input: eventInput(from: source, requireEventId: false),
+          dryRun: try extractOptionalBooleanArgument("dryRun", from: source) ?? false
+        ),
         selection: selectionBodyFromFieldSource(source)
       )
     ]
@@ -65,7 +68,10 @@ private func executeCalendarGraphQLData(service: CalendarGatewayService, query: 
   if let source = rootFieldSource("updateEvent", in: query) {
     return [
       "updateEvent": projectGraphQLValue(
-        try service.updateEvent(input: eventInput(from: source, requireEventId: true)),
+        try service.updateEvent(
+          input: eventInput(from: source, requireEventId: true),
+          dryRun: try extractOptionalBooleanArgument("dryRun", from: source) ?? false
+        ),
         selection: selectionBodyFromFieldSource(source)
       )
     ]
@@ -79,7 +85,8 @@ private func executeCalendarGraphQLData(service: CalendarGatewayService, query: 
           accountId: gatewayCalendarId,
           calendarId: try extractOptionalStringArgument("providerCalendarId", from: source),
           eventId: try extractStringArgument("eventId", from: source),
-          sendUpdates: try extractOptionalStringArgument("sendUpdates", from: source)
+          sendUpdates: try extractOptionalStringArgument("sendUpdates", from: source),
+          dryRun: try extractOptionalBooleanArgument("dryRun", from: source) ?? false
         ),
         selection: selectionBodyFromFieldSource(source)
       )

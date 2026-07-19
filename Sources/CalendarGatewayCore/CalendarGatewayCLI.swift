@@ -1,7 +1,15 @@
 import Foundation
 
 public struct CalendarGatewayCLI {
-  public init() {}
+  let serviceFactory: (CalendarGatewayConfig) -> CalendarGatewayService
+
+  public init() {
+    serviceFactory = { CalendarGatewayService(config: $0) }
+  }
+
+  init(serviceFactory: @escaping (CalendarGatewayConfig) -> CalendarGatewayService) {
+    self.serviceFactory = serviceFactory
+  }
 
   public func run(
     arguments: [String],
@@ -83,10 +91,20 @@ public struct CalendarGatewayCLI {
       try validateAllowedFlags(parsed.flags, commandFlags: ["calendar", "all"])
       try validatePositionalCount(parsed.positionals, count: 2)
       return try runCache(subcommand: subcommand, flags: parsed.flags, configPath: configPath, environment: environment, pretty: pretty)
+    case "event":
+      try validateAllowedFlags(parsed.flags, commandFlags: try eventCommandFlags(subcommand: subcommand))
+      try validatePositionalCount(parsed.positionals, count: 2)
+      return try runEventCommand(
+        subcommand: subcommand,
+        flags: parsed.flags,
+        configPath: configPath,
+        environment: environment,
+        pretty: pretty
+      )
     default:
       try validateAllowedFlags(parsed.flags, commandFlags: [])
       throw CalendarGatewayError(
-        "Supported commands: graphql, config validate, auth <login|revoke|status>, cache prune",
+        "Supported commands: graphql, config validate, auth <login|revoke|status>, cache prune, event <create|update|delete>",
         code: .invalidArgument,
         exitCode: .invalidCliUsage
       )
@@ -186,13 +204,40 @@ private func rootHelpText() -> String {
     auth <login|revoke|status> --credential <id>
     auth login --credential <id> [--redirect-uri <loopback-url>] [--open-browser false] [--timeout-seconds <seconds>]
     cache prune [--calendar <id>|--all]
+    event create --calendar <local-id> [event input flags] [--dry-run]
+    event update --calendar <local-id> --event-id <id> [event input flags] [--dry-run]
+    event delete --calendar <local-id> --event-id <id> [--provider-calendar <id>] [--send-updates <value>] [--dry-run]
 
   Examples:
     calendar-gateway graphql --query '{ calendars { id } }'
     calendar-gateway config validate
     calendar-gateway auth status --credential google-personal
     calendar-gateway cache prune --calendar personal
+    calendar-gateway event create --calendar personal --summary Planning --start 2026-07-01T09:00:00Z --end 2026-07-01T09:30:00Z --dry-run
   """
+}
+
+private func eventCommandFlags(subcommand: String?) throws -> Set<String> {
+  let targetFlags: Set<String> = ["calendar", "provider-calendar", "send-updates", "dry-run"]
+  let inputFlags: Set<String> = [
+    "summary", "description", "location", "color-id", "visibility", "transparency",
+    "start", "end", "time-zone", "attendee-emails", "recurrence-rules",
+    "reminder-use-default", "reminder-overrides", "create-conference", "conference-request-id"
+  ]
+  switch subcommand {
+  case "create":
+    return targetFlags.union(inputFlags)
+  case "update":
+    return targetFlags.union(inputFlags).union(["event-id"])
+  case "delete":
+    return targetFlags.union(["event-id"])
+  default:
+    throw CalendarGatewayError(
+      "event requires one of: create, update, delete",
+      code: .invalidArgument,
+      exitCode: .invalidCliUsage
+    )
+  }
 }
 
 private func validateGlobalControlCommand(_ parsed: ParsedArgs, flag: String) throws {

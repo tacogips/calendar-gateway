@@ -24,6 +24,21 @@ Implemented commands:
 - `calendar-gateway graphql --query <query> [--variables <json>|--variables-file <path>]`
 - `calendar-gateway graphql --query-file <path> [--variables <json>|--variables-file <path>]`
 
+Selected event-mutation command addition for issue-resolution workflow issue
+`codex-design-and-implement-review-loop-session-600/comm-001238`:
+
+- `calendar-gateway event create --calendar <id> [event input flags] [--dry-run]`
+- `calendar-gateway event update --calendar <id> --event-id <id> [event input flags] [--dry-run]`
+- `calendar-gateway event delete --calendar <id> --event-id <id> [--provider-calendar <id>] [--send-updates <value>] [--dry-run]`
+
+These commands are thin adapters over `CalendarGatewayService`; they do not own
+separate validation, preview, or provider logic. Create and update event input
+flags map to the canonical GraphQL/service input using kebab-case names, with
+collection values encoded as typed JSON arrays. Boolean event flags accept a
+bare flag or an exact lowercase `true`/`false` value. The exact collection
+element schemas, examples, defaults, and invalid-value behavior are defined in
+`design-docs/specs/design-dry-run-event-mutations.md`.
+
 The CLI writes business payloads as JSON on stdout and structured errors as
 JSON on stderr. `auth login` runs Google installed-app OAuth for desktop client
 JSON. Token stores can also be supplied through the config file or
@@ -63,9 +78,9 @@ Implemented GraphQL-style root fields:
 - `events(calendarId: "...", providerCalendarId: "...", timeMin: "...", timeMax: "...", updatedMin: "...", cursor: "...")`
 - `events(calendarId: "...", syncToken: "...", showDeleted: true, singleEvents: false)`
 - `event(calendarId: "...", providerCalendarId: "...", eventId: "...")`
-- `createEvent(calendarId: "...", summary: "...", start: "...", end: "...", recurrenceRules: ["RRULE:..."], colorId: "7", createConference: true)`
-- `updateEvent(calendarId: "...", eventId: "...", summary: "...", reminderOverrides: ["popup:30"], visibility: "private", transparency: "transparent")`
-- `deleteEvent(calendarId: "...", eventId: "...", sendUpdates: "all|externalOnly|none")`
+- `createEvent(calendarId: "...", summary: "...", start: "...", end: "...", recurrenceRules: ["RRULE:..."], colorId: "7", createConference: true, dryRun: true)`
+- `updateEvent(calendarId: "...", eventId: "...", summary: "...", reminderOverrides: ["popup:30"], visibility: "private", transparency: "transparent", dryRun: true)`
+- `deleteEvent(calendarId: "...", eventId: "...", sendUpdates: "all|externalOnly|none", dryRun: true)`
 - `calendarAPI(credentialId: "...", method: "GET|POST|PUT|PATCH|DELETE", path: "/colors", query: ["name=value"], body: "{\"json\":true}", access: "auto|read|write")`
 
 The lightweight GraphQL executor accepts exactly one top-level root field per
@@ -77,8 +92,22 @@ if a caller labels the operation as `query`.
 Write fields fail with `WRITE_DISABLED` before provider mutation when the
 credential is not configured with `access_mode = "read_write"` or
 `access_mode = "full"`.
-When supplied, `sendUpdates` is validated before provider mutation and must be
-`all`, `externalOnly`, or `none`.
+`sendUpdates` is validated before provider mutation. Omitted or whitespace-only
+input is accepted as absent; otherwise, the trimmed value must be `all`,
+`externalOnly`, or `none`. The existing rule does not rewrite the original
+provider-bound string. Dry-run previews preserve the same string, including
+whitespace-only or padded allowed input, while an omitted value is `null`.
+
+`dryRun` is an optional Boolean on `createEvent`, `updateEvent`, and
+`deleteEvent`, and `--dry-run` is the corresponding direct `event` command
+flag. Both default to `false`. The service enforces the write gate and all
+existing validation before returning a preview, so read-only dry-runs still
+fail with `WRITE_DISABLED`. A successful create/update preview contains
+`dryRun: true`, the operation, resolved target metadata, and `validatedInput`
+matching the normalized input the live branch would pass to the provider. A
+delete preview contains the resolved target identifiers, `wouldDelete: true`,
+and `deleted: false`. No dry-run reaches a provider write method. GraphQL error
+envelopes and CLI stderr error envelopes remain unchanged.
 
 `freeBusy` returns canonical busy intervals without event details. `timeMin` and
 `timeMax` are required RFC 3339 date-time strings. The accepted form includes

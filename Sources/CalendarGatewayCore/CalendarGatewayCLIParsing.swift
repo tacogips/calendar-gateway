@@ -15,7 +15,9 @@ func parseArguments(_ arguments: [String]) throws -> ParsedArgs {
   var positionals: [String] = []
   var flags: [String: StringOrBool] = [:]
   var repeatedFlags: [String: [StringOrBool]] = [:]
-  let booleanFlags: Set<String> = ["all", "open-browser", "pretty"]
+  let booleanFlags: Set<String> = [
+    "all", "create-conference", "dry-run", "open-browser", "pretty", "reminder-use-default"
+  ]
   var index = 0
 
   while index < arguments.count {

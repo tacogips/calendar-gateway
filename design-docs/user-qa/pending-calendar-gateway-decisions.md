@@ -11,14 +11,6 @@ placeholders for additional providers?
 Default design decision: implement Google Calendar first behind a generic
 provider protocol.
 
-## Write Safety
-
-Should event create/update/delete commands expose a required dry-run mode before
-live provider writes are enabled?
-
-Default design decision: tests use fake providers, and live write operations
-remain gated by explicit `read_write` access mode and OAuth scopes.
-
 ## Long-Running Transport
 
 Is `calendar-gateway serve` required for v1, or is one-shot GraphQL sufficient?
@@ -43,3 +35,17 @@ Default design decision: v1 is macOS-only because `Package.swift` declares
 macOS 14 and the current OAuth bootstrap depends on Apple platform APIs. Linux
 support can be reconsidered after the OAuth bootstrap, browser launch, random
 bytes, and socket receiver are behind portable adapters.
+
+## Resolved Decisions
+
+Write safety is resolved by issue
+`codex-design-and-implement-review-loop-session-600/comm-001238`: event
+create/update/delete expose an optional dry-run mode that defaults to `false`.
+Dry-run still requires `read_write` or `full` access, runs normal validation,
+and returns a preview before any provider write. Tests use fake providers. The
+authoritative behavior is recorded in
+`design-docs/specs/design-dry-run-event-mutations.md`.
+
+No `sendUpdates` compatibility change is authorized by this issue. Create,
+update, and delete retain their existing validation and live provider argument
+behavior. Dry-run previews expose the exact same provider-bound value.
