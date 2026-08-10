@@ -548,7 +548,7 @@ Required implementation verification:
 
 ```bash
 swift test --filter DryRun
-task lint
+mise run lint
 swift build
 swift test
 git status --short

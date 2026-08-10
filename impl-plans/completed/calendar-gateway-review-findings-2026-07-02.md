@@ -345,9 +345,9 @@ swift test --filter <focused-test-name>
 swift test
 swift build
 swift run calendar-gateway --help
-task lint
-task build
-task test
+mise run lint
+mise run build
+mise run test
 git diff --check
 git status --short
 ```
@@ -395,7 +395,7 @@ manually and document that limitation in the progress log.
 - 2026-07-02: Verification passed:
   `swift test --filter loopbackReceiverIgnoresStrayRequestsUntilExpectedCallback`,
   `swift test --filter liveTokenValidationUsesScopeCoverageSemantics`,
-  `swift test`, `task lint`, `task build`, `task test`, `swift build`,
+  `swift test`, `mise run lint`, `mise run build`, `mise run test`, `swift build`,
   `swift run calendar-gateway --help`, `git diff --check`, workflow YAML
   parsing via Ruby, and source/test line-count audit. Commands were run with
   the Xcode SDK environment required by the local macOS/Nix shell.
@@ -416,8 +416,8 @@ manually and document that limitation in the progress log.
   the Xcode SDK/toolchain environment and the focused test passed.
 - 2026-07-02: Reran broad verification after the TASK-008 test-integrity fix:
   `swift test`, `swift build`, `swift run calendar-gateway --help`,
-  `task build`, `task test`, `task lint`, and `git diff --check` passed.
-  `task lint` was run inside `nix develop` because `swiftlint` was not
+  `mise run build`, `mise run test`, `mise run lint`, and `git diff --check` passed.
+  `mise run lint` was run inside `nix develop` because `swiftlint` was not
   available on the direct shell `PATH`.
 - 2026-07-02: Addressed Step 6 self-review feedback for the Swift file
   line-count rule by moving `tokenRefreshPersistsRotatedRefreshToken` from
@@ -427,13 +427,13 @@ manually and document that limitation in the progress log.
   `CommandTests.swift` is now 978 lines.
 - 2026-07-02: Reran verification after the line-count split:
   `swift test --filter tokenRefreshPersistsRotatedRefreshToken`, `swift test`,
-  `nix develop -c bash -lc '... task lint'`, `git diff --check`, and
+  `nix develop -c bash -lc '... mise run lint'`, `git diff --check`, and
   `rg --files -g '*.swift' | xargs wc -l | sort -n | tail -20` passed.
   Broad `swift test` passed 103 tests.
 - 2026-07-02: Final continuation verification passed with the Xcode
   SDK/toolchain environment: `swift test --filter
   tokenRefreshPersistsRotatedRefreshToken`, `swift test` with 103 tests,
-  `swift build`, `swift run calendar-gateway --help`, `task build`,
-  `task test`, `nix develop -c bash -lc '... task lint'`, `git diff --check`,
-  and the Swift file line-count audit. `task lint` reported 0 violations in
+  `swift build`, `swift run calendar-gateway --help`, `mise run build`,
+  `mise run test`, `nix develop -c bash -lc '... mise run lint'`, `git diff --check`,
+  and the Swift file line-count audit. `mise run lint` reported 0 violations in
   28 files.

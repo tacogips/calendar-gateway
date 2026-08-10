@@ -403,7 +403,7 @@ Run in this order and record command, result, and any corrective rerun:
 ```bash
 swift test --filter DryRun
 swiftlint
-task lint
+mise run lint
 swift build
 swift test
 git diff --check
@@ -433,7 +433,7 @@ Verification assertions beyond command exit status:
   URL, machine-local absolute path, or generated-secret issue remains.
 
 If direct `swiftlint` is unavailable outside the development shell, record the
-failure and run `task lint` through the repository's Nix/Xcode environment as
+failure and run `mise run lint` through the repository's Nix/Xcode environment as
 documented by `.codex/skills/swift-coding-agent/SKILL.md`; the final lint gate
 must still pass.
 
@@ -510,7 +510,7 @@ documentation is changed.
   match the implementation without contract changes. Codex-agent references:
   none. Findings: none.
 - 2026-07-18: TASK-008 verification and adversarial review completed. Exact
-  commands passed: `swift test --filter DryRun`, `swiftlint`, `task lint`,
+  commands passed: `swift test --filter DryRun`, `swiftlint`, `mise run lint`,
   `swift build`, `swift test`, `git diff --check`, and
   `rg --files Sources Tests -g '*.swift' | xargs wc -l | sort -n`. Full suite:
   110 tests passed; lint: 0 violations; every Swift file is below 1000 lines.

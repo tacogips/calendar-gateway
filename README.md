@@ -6,9 +6,9 @@ Calendar.
 ## Development
 
 ```bash
-nix develop
-task build
-task test
+mise install
+mise run build
+mise run test
 swift run calendar-gateway --help
 ```
 
@@ -59,19 +59,19 @@ request the broad `https://www.googleapis.com/auth/calendar` scope.
 Build local formula archives:
 
 ```bash
-task build:homebrew -- darwin-arm64 darwin-x64
+mise run build:homebrew -- darwin-arm64 darwin-x64
 ```
 
 Render a formula after both platform archives exist:
 
 ```bash
-task homebrew:formula -- 0.1.1
+mise run homebrew:formula -- 0.1.1
 ```
 
 Render directly into the default sibling tap checkout:
 
 ```bash
-task homebrew:tap-formula -- 0.1.1
+mise run homebrew:tap-formula -- 0.1.1
 ```
 
 Install from the tap after the formula is published:
@@ -89,27 +89,27 @@ Apple signing credentials must stay local and must not be committed.
 Check the build plan:
 
 ```bash
-task build:homebrew-cask -- --dry-run darwin-arm64 darwin-x64
+mise run build:homebrew-cask -- --dry-run darwin-arm64 darwin-x64
 ```
 
 Build with local signing credentials:
 
 ```bash
 kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
-  task build:homebrew-cask -- darwin-arm64 darwin-x64
+  mise run build:homebrew-cask -- darwin-arm64 darwin-x64
 ```
 
 Render a Cask:
 
 ```bash
-task homebrew:cask -- 0.1.1
+mise run homebrew:cask -- 0.1.1
 ```
 
 For a tagged release, build, upload, and render the tap Cask:
 
 ```bash
 kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
-  task release:homebrew-cask-local -- v0.1.1
+  mise run release:homebrew-cask-local -- v0.1.1
 ```
 
 See `packaging/homebrew/README.md` and `.agents/skills/` for release workflows.

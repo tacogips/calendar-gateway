@@ -113,12 +113,12 @@ Reference files from a sibling `mail-gateway` checkout:
 - `swift build` passed on 2026-07-01 after adding duplicate flag rejection.
 - `swift run calendar-gateway --help` passed on 2026-07-01 after adding
   duplicate flag rejection.
-- `task lint` passed on 2026-07-01 through `nix develop` with Xcode
+- `mise run lint` passed on 2026-07-01 through `nix develop` with Xcode
   `DEVELOPER_DIR`, `SDKROOT`, `TOOLCHAINS`, and toolchain `PATH` overrides
   after adding duplicate flag rejection.
-- `task build` and `task test` passed on 2026-07-01 through `nix develop`
+- `mise run build` and `mise run test` passed on 2026-07-01 through `nix develop`
   with the same Xcode toolchain overrides after adding duplicate flag
-  rejection. `task test` passed with 74 tests.
+  rejection. `mise run test` passed with 74 tests.
 
 ## Riela Workflow Evidence
 

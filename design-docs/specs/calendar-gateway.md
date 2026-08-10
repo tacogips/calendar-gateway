@@ -475,7 +475,7 @@ Riela status:
 Required verification commands for full implementation handoff:
 
 ```bash
-task lint
+mise run lint
 swift build
 swift test
 ```
