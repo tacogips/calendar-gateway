@@ -55,7 +55,7 @@ main() {
   version="$1"
   output="${2:-$repo_root/Casks/$artifact_name.rb}"
   release_dir="${CASK_RELEASE_DIR:-$repo_root/dist/homebrew-cask}"
-  release_base_url="${CASK_RELEASE_BASE_URL:-https://github.com/user/repo/releases/download/v$version}"
+  release_base_url="${CASK_RELEASE_BASE_URL:-https://github.com/tacogips/calendar-gateway/releases/download/v$version}"
 
   local darwin_arm64_sha darwin_x64_sha
   darwin_arm64_sha="$(sha_for_target "$version" darwin-arm64 "$release_dir")"
@@ -70,11 +70,10 @@ cask "calendar-gateway" do
   sha256 arm: "$darwin_arm64_sha",
          intel: "$darwin_x64_sha"
 
-  url "$release_base_url/$artifact_name-#{version}-#{arch}.dmg",
-      verified: "github.com/user/repo/releases/download/"
+  url "$release_base_url/$artifact_name-#{version}-#{arch}.dmg"
   name "calendar-gateway"
-  desc "A Swift command line tool"
-  homepage "https://github.com/user/repo"
+  desc "Swift library and local CLI gateway for calendar clients"
+  homepage "https://github.com/tacogips/calendar-gateway"
 
   livecheck do
     url :url

@@ -106,15 +106,8 @@ func writeGoogleCalendarOAuthTokenStore(
   exitCode: CalendarGatewayExitCode
 ) throws {
   do {
-    let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
-    try FileManager.default.createDirectory(
-      at: directory,
-      withIntermediateDirectories: true,
-      attributes: [.posixPermissions: 0o700]
-    )
     let data = try JSONEncoder().encode(tokenStore)
-    try data.write(to: URL(fileURLWithPath: path), options: [.atomic])
-    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+    try writeCalendarSecureTokenFile(data, to: path)
   } catch {
     throw CalendarGatewayError(
       errorMessage,
@@ -134,7 +127,7 @@ func loadGoogleCalendarOAuthTokenStore(
     if let tokenStoreJSON = credential.tokenStoreJSON {
       data = Data(tokenStoreJSON.utf8)
     } else {
-      guard FileManager.default.isReadableFile(atPath: credential.tokenStorePath) else {
+      guard calendarTokenFileExists(at: credential.tokenStorePath) else {
         throw CalendarGatewayError(
           missingAuthMessage,
           code: .authRequired,
@@ -142,7 +135,7 @@ func loadGoogleCalendarOAuthTokenStore(
           details: ["credentialId": credential.id, "tokenStorePath": credential.tokenStorePath]
         )
       }
-      data = try Data(contentsOf: URL(fileURLWithPath: credential.tokenStorePath))
+      data = try calendarSecureTokenFileData(at: credential.tokenStorePath)
     }
     return try JSONDecoder().decode(CalendarOAuthTokenStore.self, from: data)
   } catch let error as CalendarGatewayError {
@@ -175,13 +168,8 @@ private func validGoogleCalendarAccessTokenWithoutLock(
 
 private func withGoogleCalendarTokenStoreLock<T>(path: String, operation: () throws -> T) throws -> T {
   let lockPath = path + ".lock"
-  let lockDirectory = URL(fileURLWithPath: lockPath).deletingLastPathComponent()
-  try FileManager.default.createDirectory(
-    at: lockDirectory,
-    withIntermediateDirectories: true,
-    attributes: [.posixPermissions: 0o700]
-  )
-  let fd = Darwin.open(lockPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+  let lockParent = try calendarTokenParent(lockPath, create: true)
+  let fd = Darwin.openat(lockParent.fd, lockParent.leaf, O_CREAT | O_RDWR | O_NOFOLLOW, S_IRUSR | S_IWUSR)
   guard fd >= 0 else {
     throw CalendarGatewayError(
       "Failed to open Google Calendar token store lock",
@@ -193,6 +181,18 @@ private func withGoogleCalendarTokenStoreLock<T>(path: String, operation: () thr
   defer {
     close(fd)
   }
+  var lockInfo = stat()
+  guard Darwin.fstat(fd, &lockInfo) == 0,
+        (lockInfo.st_mode & S_IFMT) == S_IFREG,
+        lockInfo.st_nlink == 1 else {
+    throw CalendarGatewayError(
+      "Refusing unsafe Google Calendar token store lock",
+      code: .authRequired,
+      exitCode: .providerApiError,
+      details: ["path": lockPath]
+    )
+  }
+  _ = fchmod(fd, S_IRUSR | S_IWUSR)
   guard flock(fd, LOCK_EX) == 0 else {
     throw CalendarGatewayError(
       "Failed to lock Google Calendar token store",

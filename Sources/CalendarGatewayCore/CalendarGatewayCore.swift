@@ -491,10 +491,9 @@ public struct CalendarGatewayService {
     if credential.tokenStoreJSON != nil {
       localDeletionSkipped = true
       localDeletionReason = "token store is supplied by environment"
-    } else if FileManager.default.fileExists(atPath: credential.tokenStorePath) {
+    } else if calendarTokenFileExists(at: credential.tokenStorePath) {
       do {
-        try FileManager.default.removeItem(atPath: credential.tokenStorePath)
-        localTokenDeleted = true
+        localTokenDeleted = try removeCalendarSecureTokenFile(at: credential.tokenStorePath)
       } catch {
         throw CalendarGatewayError(
           "Failed to delete token store for credential \(credential.id)",
@@ -588,7 +587,7 @@ public struct CalendarGatewayService {
 public typealias CalendarGatewayClient = CalendarGatewayService
 
 public enum Version {
-  public static let current = "0.1.4"
+  public static let current = "0.1.5"
 }
 
 func validateSendUpdates(_ sendUpdates: String?) throws {

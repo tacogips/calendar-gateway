@@ -47,7 +47,7 @@ public enum CalendarGatewayConfigLoader {
     if let credentialDir = nonBlank(environment["CALENDAR_GATEWAY_CREDENTIAL_DIR"]) {
       return normalizedPath(credentialDir)
     }
-    let stateRoot = nonBlank(environment["XDG_STATE_HOME"])
+    let stateRoot = nonBlank(environment["XDG_STATE_HOME"]).flatMap { $0.hasPrefix("/") ? $0 : nil }
       ?? FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".local")
         .appendingPathComponent("state")
@@ -61,7 +61,7 @@ public enum CalendarGatewayConfigLoader {
   public static func resolveDefaultConfigPath(
     environment: [String: String] = ProcessInfo.processInfo.environment
   ) -> String {
-    if let xdgConfigHome = nonBlank(environment["XDG_CONFIG_HOME"]) {
+    if let xdgConfigHome = nonBlank(environment["XDG_CONFIG_HOME"]), xdgConfigHome.hasPrefix("/") {
       return normalizedPath(URL(fileURLWithPath: xdgConfigHome)
         .appendingPathComponent("calendar-gateway")
         .appendingPathComponent("config.toml")
@@ -198,6 +198,20 @@ public enum CalendarGatewayConfigLoader {
         credentialId: defaultCredentialId, pathKey: "token_store_path"
       )]) != nil
     )
+    // Only the historical synthesized default is migrated. Configured paths,
+    // per-credential environment paths, inline JSON, and credential-directory
+    // overrides intentionally retain their selected source without migration.
+    if credential.tokenStoreJSON == nil,
+       !credential.tokenStorePathFromEnvironment,
+       nonBlank(environment["CALENDAR_GATEWAY_CREDENTIAL_DIR"]) == nil {
+      let legacyPath = URL(fileURLWithPath: configPath)
+        .deletingLastPathComponent()
+        .appendingPathComponent("tokens")
+        .appendingPathComponent("\(defaultCredentialId).json")
+        .path
+      try migrateCalendarLegacyTokenStore(from: legacyPath, to: credential.tokenStorePath)
+    }
+
     return CalendarGatewayConfig(
       configPath: configPath,
       storage: CalendarStorageConfig(cacheDir: defaultCacheDirectory(environment: environment)),

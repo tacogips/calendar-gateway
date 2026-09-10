@@ -48,6 +48,17 @@ calendar-gateway graphql --query '{ calendarAPI(credentialId: "google-personal",
 Configuration defaults to `$XDG_CONFIG_HOME/calendar-gateway/config.toml` and
 can be overridden with `--config` or `CALENDAR_GATEWAY_CONFIG`.
 
+When using the implicit configuration, mutable OAuth tokens are stored at
+`${XDG_STATE_HOME:-~/.local/state}/calendar-gateway/credentials/<profile>.json`.
+The former implicit token at
+`${XDG_CONFIG_HOME:-~/.config}/calendar-gateway/tokens/google-personal.json`
+is copied once when no replacement token exists. A private completion marker
+keeps the legacy recovery copy from being selected again after revocation.
+Explicit config paths,
+credential path/JSON environment variables, and `CALENDAR_GATEWAY_CREDENTIAL_DIR`
+are never migrated. Token directories and files are restricted to `0700` and
+`0600`; unsafe symlinks and hard-linked token files are rejected.
+
 `auth login` starts a local loopback OAuth callback server, opens the Google
 authorization page, exchanges the callback code, and writes the token store. Use
 `--redirect-uri http://127.0.0.1:<port>/<path>` to bind a fixed local callback

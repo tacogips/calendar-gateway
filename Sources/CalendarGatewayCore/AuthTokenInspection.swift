@@ -22,8 +22,7 @@ public func inspectCalendarTokenStore(credential: CalendarCredentialConfig) -> C
   let data: Data
   if let tokenStoreJSON = credential.tokenStoreJSON {
     data = Data(tokenStoreJSON.utf8)
-  } else if FileManager.default.isReadableFile(atPath: credential.tokenStorePath),
-            let fileData = FileManager.default.contents(atPath: credential.tokenStorePath) {
+  } else if let fileData = try? calendarSecureTokenFileData(at: credential.tokenStorePath) {
     data = fileData
   } else {
     return CalendarTokenInspection(
