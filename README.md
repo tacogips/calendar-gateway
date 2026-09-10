@@ -1,5 +1,13 @@
 # calendar-gateway
 
+Credential token selection prefers `CALENDAR_GATEWAY_CREDENTIAL_<ID>_TOKEN_STORE_JSON`,
+then `TOKEN_STORE_PATH`, then the configured/default file. Explicit `--config`
+does not override credential environment variables. Inline JSON is immutable;
+unset its exact variable before login or refresh. Auth errors, status, and login
+output identify the selected source and explain how subsequent commands can use
+the written token file. The implicit fallback configuration works for both auth
+and GraphQL commands.
+
 Swift library and local CLI gateway for calendar clients such as Google
 Calendar.
 

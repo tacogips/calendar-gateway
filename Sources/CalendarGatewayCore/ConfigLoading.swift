@@ -193,7 +193,10 @@ public enum CalendarGatewayConfigLoader {
         credentialId: defaultCredentialId,
         valueKey: "token_store_json",
         environment: environment
-      )
+      ),
+      tokenStorePathFromEnvironment: nonBlank(environment[getCredentialPathEnvVarName(
+        credentialId: defaultCredentialId, pathKey: "token_store_path"
+      )]) != nil
     )
     return CalendarGatewayConfig(
       configPath: configPath,
@@ -392,7 +395,10 @@ private func parseCredentialConfig(
       environment: environment,
       context: "\(contextBase).token_store_path"
     )),
-    tokenStoreJSON: tokenStoreJSON
+    tokenStoreJSON: tokenStoreJSON,
+    tokenStorePathFromEnvironment: nonBlank(environment[CalendarGatewayConfigLoader.getCredentialPathEnvVarName(
+      credentialId: credentialId, pathKey: "token_store_path"
+    )]) != nil
   )
 }
 

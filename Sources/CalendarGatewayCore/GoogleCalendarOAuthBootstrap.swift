@@ -26,6 +26,12 @@ struct GoogleCalendarOAuthBootstrapper {
     credential: CalendarCredentialConfig,
     options: GoogleCalendarOAuthLoginOptions = .default
   ) throws -> [String: Any] {
+    guard credential.tokenStoreJSON == nil else {
+      throw calendarTokenSourceError(
+        CalendarGatewayError("Inline token JSON is immutable", code: .invalidArgument, exitCode: .invalidCliUsage),
+        credential: credential
+      )
+    }
     let client = try loadGoogleOAuthClient(credential: credential, use: .desktopLogin)
     let receiver = try LoopbackOAuthReceiver(redirectURI: options.redirectURI)
     let state = try randomURLSafeString(byteCount: 32)
@@ -67,7 +73,7 @@ struct GoogleCalendarOAuthBootstrapper {
       "emailAddress": tokenStore.emailAddress as Any? ?? NSNull(),
       "expiresAt": tokenStore.expiresAt as Any? ?? NSNull(),
       "hasRefreshToken": tokenStore.refreshToken?.isEmpty == false
-    ]
+    ].merging(calendarTokenSourceDetails(credential)) { current, _ in current }
   }
 }
 

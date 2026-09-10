@@ -87,11 +87,15 @@ func validGoogleCalendarAccessToken(
   credential: CalendarCredentialConfig,
   use: CalendarAccessTokenUse
 ) throws -> String {
-  if credential.tokenStoreJSON != nil {
-    return try validGoogleCalendarAccessTokenWithoutLock(credential: credential, use: use)
-  }
-  return try withGoogleCalendarTokenStoreLock(path: credential.tokenStorePath) {
-    try validGoogleCalendarAccessTokenWithoutLock(credential: credential, use: use)
+  do {
+    if credential.tokenStoreJSON != nil {
+      return try validGoogleCalendarAccessTokenWithoutLock(credential: credential, use: use)
+    }
+    return try withGoogleCalendarTokenStoreLock(path: credential.tokenStorePath) {
+      try validGoogleCalendarAccessTokenWithoutLock(credential: credential, use: use)
+    }
+  } catch let error as CalendarGatewayError {
+    throw calendarTokenSourceError(error, credential: credential)
   }
 }
 
@@ -162,6 +166,9 @@ private func validGoogleCalendarAccessTokenWithoutLock(
   if let accessToken = nonBlank(tokenStore.accessToken),
      calendarAccessTokenIsFresh(expiresAt: tokenStore.expiresAt, refreshLeeway: calendarTokenRefreshLeeway) {
     return accessToken
+  }
+  guard credential.tokenStoreJSON == nil else {
+    throw CalendarGatewayError("Inline token JSON requires refresh but is immutable; select a writable token file and log in", code: .authRequired, exitCode: .providerApiError)
   }
   return try refreshGoogleCalendarAccessToken(credential: credential, tokenStore: tokenStore)
 }

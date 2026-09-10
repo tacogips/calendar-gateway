@@ -119,6 +119,22 @@ public struct CalendarCredentialConfig: Sendable {
   public let oauthClientSecretJSON: String?
   public let tokenStorePath: String
   public let tokenStoreJSON: String?
+  public let tokenStorePathFromEnvironment: Bool
+
+  public init(
+    id: String, provider: CalendarProvider, accessMode: CalendarAccessMode,
+    oauthClientSecretPath: String, oauthClientSecretJSON: String?,
+    tokenStorePath: String, tokenStoreJSON: String?, tokenStorePathFromEnvironment: Bool = false
+  ) {
+    self.id = id
+    self.provider = provider
+    self.accessMode = accessMode
+    self.oauthClientSecretPath = oauthClientSecretPath
+    self.oauthClientSecretJSON = oauthClientSecretJSON
+    self.tokenStorePath = tokenStorePath
+    self.tokenStoreJSON = tokenStoreJSON
+    self.tokenStorePathFromEnvironment = tokenStorePathFromEnvironment
+  }
 }
 
 public struct CalendarAccountConfig: Sendable {
@@ -437,7 +453,7 @@ public struct CalendarGatewayService {
       "grantedAccessMode": tokenState.grantedAccessMode?.rawValue as Any? ?? NSNull(),
       "expiresAt": tokenState.expiresAt as Any? ?? NSNull(),
       "hasRefreshToken": tokenState.hasRefreshToken
-    ]
+    ].merging(calendarTokenSourceDetails(credential)) { current, _ in current }
   }
 
   public func revokeAuth(credentialId: String) throws -> [String: Any] {
@@ -572,7 +588,7 @@ public struct CalendarGatewayService {
 public typealias CalendarGatewayClient = CalendarGatewayService
 
 public enum Version {
-  public static let current = "0.1.3"
+  public static let current = "0.1.4"
 }
 
 func validateSendUpdates(_ sendUpdates: String?) throws {
